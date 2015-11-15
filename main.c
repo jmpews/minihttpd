@@ -97,8 +97,10 @@ INT_32 main(INT_32 argc, const char * argv[]) {
                             {
                                 FD_CLR(i,&read_fds);
                                 FD_SET(i,&write_fds);
-                            } else if (result == 0)
+                            } else if (result == 0||result==-1) {
+                                close(i);
                                 FD_CLR(i, &read_fds);
+                            }
                         }
                         else if(FD_ISSET(i,&tmp_write_fds))
                         {
