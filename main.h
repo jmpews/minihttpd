@@ -48,7 +48,7 @@ void send_not_found(int client);
 void serve_file(int client_fd,const char *filename);
 INT_32 startup(int *port);
 void send_response(int client_fd);
-void epoll_close(int fd);
+void epoll_close(int epoll_fd,int fd,struct epoll_event *ev);
 void start_epoll_loop(int httpd);
 
 #endif /* sockets_h */
@@ -331,14 +331,14 @@ void start_epoll_loop(int httpd)
     int epoll_fd,nfds;
     int client_fd;
     int s;
-    int i,n;
+    int i;
     int header_len=0;
     struct epoll_event ev;
     struct epoll_event *events;
     struct sockaddr_in client_addr;
     socklen_t socket_len= sizeof(struct sockaddr_in);
 
-    epoll_fd=epoll_create(0);
+    epoll_fd=epoll_create(MAX_CLIENTS);
     ev.data.fd = httpd;
     ev.events = EPOLLIN|EPOLLET;
     s=epoll_ctl(epoll_fd, EPOLL_CTL_ADD, httpd, &ev);
@@ -354,8 +354,8 @@ void start_epoll_loop(int httpd)
     }
     memset(events,0,MAX_CLIENTS*sizeof(struct epoll_event));
     for (; ;) {
-        nfds=epoll_wait(epoll_fd, events, MAX_CLIENTS, 3);
-        for (i = 0; i < n; i++)
+        nfds=epoll_wait(epoll_fd, events, MAX_CLIENTS, 3000);
+        for (i = 0; i < nfds; i++)
         {
             if((events[i].events&EPOLLERR) || (events[i].events & EPOLLHUP))
             {
@@ -373,40 +373,41 @@ void start_epoll_loop(int httpd)
                     ev.events = EPOLLIN|EPOLLET;
                     s=epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &ev);
                     if (s == -1)
-                        epoll_close(events[i].data.fd);
+                        epoll_close(epoll_fd,events[i].data.fd,&ev);
                 }
                 else
                 {
                     header_len=accept_request(events[i].data.fd);
                     if(header_len>0)
                     {
-                        ev.data.fd = events;
+                        ev.data.fd = events[i].data.fd;
                         ev.events = EPOLLOUT|EPOLLET;
                         s=epoll_ctl(epoll_fd, EPOLL_CTL_MOD, events[i].data.fd, &ev);
                         if(s==-1)
-                            epoll_close(events[i].data.fd);
+                            epoll_close(epoll_fd,events[i].data.fd,&ev);
                     }
                     else
                     {
                         s=epoll_ctl(epoll_fd, EPOLL_CTL_DEL, events[i].data.fd, &ev);
-                        epoll_close(events[i].data.fd);
+                        epoll_close(epoll_fd,events[i].data.fd,&ev);
                     }
                 }
             }
             else if(events[i].events&EPOLLOUT)
             {
+                printf("epollout\n");
                 send_response(events[i].data.fd);
-                epoll_close(events[i].data.fd);
+                epoll_close(epoll_fd,events[i].data.fd,&ev);
 
             }
         }
     }
 }
 
-void epoll_close(int fd)
+void epoll_close(int epoll_fd,int fd,struct epoll_event *ev)
 {
 
-    if(epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, &ev)==-1)
+    if(epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, ev)==-1)
         printf("! epoll_ctl error.\n");
     close(fd);
 }
