@@ -19,6 +19,7 @@
 #include <netinet/in.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/epoll.h>
 #include <stdlib.h>
 #include <memory.h>
 #include <sys/stat.h>
@@ -45,8 +46,10 @@ int get_line(int sock, char *buf, int size);
 void send_headers(int client_fd);
 void send_not_found(int client);
 void serve_file(int client_fd,const char *filename);
-INT_32 startup(u_short *port);
+INT_32 startup(int *port);
 void send_response(int client_fd);
+void epoll_close(int fd);
+void start_epoll_loop(int httpd);
 
 #endif /* sockets_h */
 
@@ -62,7 +65,7 @@ INT_32 set_nonblocking(INT_32 sockfd)
     INT_32 opts;
     opts = fcntl(sockfd, F_GETFL);
     if(opts < 0) {
-        printf("fcntl: F_GETFL");
+        printf("! fcntl: F_GETFL");
         return -1;
     }
     
@@ -79,7 +82,7 @@ INT_32 set_nonblocking(INT_32 sockfd)
 
 
 
-INT_32 startup(u_short *port)
+INT_32 startup(int *port)
 {
     int httpd=0;
     struct sockaddr_in server_addr;
@@ -105,13 +108,13 @@ INT_32 startup(u_short *port)
     
     if(bind(httpd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1)
     {
-        printf("httpd bind error.");
+        printf("! httpd bind error.\n");
         return -1;
     }
     
     if(listen(httpd, BACKLOG) == -1)
     {
-        printf("httpd listen error.");
+        printf("! httpd listen error.\n");
         return -1;
     }
     getcwd(rootpath, sizeof(rootpath));
@@ -158,6 +161,11 @@ int accept_request(int client_fd)
     char *query_string = NULL;
     wwwpath=clients[client_fd]->req_file;
     r=get_line(client_fd, buf, sizeof(buf));
+    if(r==0)
+    {
+        //读取len 0数据,close
+        return 0;
+    }
     //read request method
     while (!(is_space(buf[j]))&&i<sizeof(buf))
     {
@@ -198,6 +206,7 @@ int accept_request(int client_fd)
     while ((r>0)&&strcmp("\n", buf))
     {
         r=get_line(client_fd, buf, sizeof(buf));
+        j+=r;
         printf("%s",buf);
     }
     
@@ -215,7 +224,7 @@ int accept_request(int client_fd)
             if((st.st_mode&S_IFMT)!=S_IFREG)
                 clients[client_fd]->filed=0;
         }
-    return 1;
+    return j;
 }
 
 void send_response(int client_fd)
@@ -317,43 +326,188 @@ void send_not_found(int client)
     */
 }
 
-
-
-INT_32 read_data(INT_32 fd,char *buffer)
+void start_epoll_loop(int httpd)
 {
-    char tmp[1024];
-    INT_32 r=0;
-    INT_32 n=0;
-    memset(&tmp, 0, sizeof(tmp));
-    do {
-        memcpy(buffer,tmp,r*sizeof(char));
-        r = recv(fd, tmp+n*sizeof(char), MAX_BUFFER_SIZE*sizeof(char), 0);
-        n+=r;
-    } while (r>0);
-    if(n>0) {
-        //read data,首先判断可否读取，如果可以读取，那么一直持续读取，直到result==-1
-        printf("RESULT:%s\n",buffer);
-        return 1;
-    } else if (n == 0) {
-        //close socket
-        close(fd);
-        printf("close connect.\n");
-        return -1;
+    int epoll_fd,nfds;
+    int client_fd;
+    int s;
+    int i,n;
+    int header_len=0;
+    struct epoll_event ev;
+    struct epoll_event *events;
+    struct sockaddr_in client_addr;
+    socklen_t socket_len= sizeof(struct sockaddr_in);
+
+    epoll_fd=epoll_create(0);
+    ev.data.fd = httpd;
+    ev.events = EPOLLIN|EPOLLET;
+    s=epoll_ctl(epoll_fd, EPOLL_CTL_ADD, httpd, &ev);
+    if (s == -1)
+    {
+        printf("! epoll_ctl error.\n");
+        abort();
     }
-    return -1;
+    events=(struct epoll_event*)malloc(MAX_CLIENTS*sizeof(struct epoll_event));
+    if(events==NULL)
+    {
+        printf("! malloc error.\n");
+    }
+    memset(events,0,MAX_CLIENTS*sizeof(struct epoll_event));
+    for (; ;) {
+        nfds=epoll_wait(epoll_fd, events, MAX_CLIENTS, 3);
+        for (i = 0; i < n; i++)
+        {
+            if((events[i].events&EPOLLERR) || (events[i].events & EPOLLHUP))
+            {
+                printf("epoll error.\n");
+                //abort();
+                continue;
+            }
+            else if(events[i].events&EPOLLIN)
+            {
+                if(events[i].data.fd==httpd)
+                {
+                    client_fd= accept(httpd, (struct sockaddr *)&client_addr,&socket_len);
+                    set_nonblocking(client_fd);
+                    ev.data.fd = client_fd;
+                    ev.events = EPOLLIN|EPOLLET;
+                    s=epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &ev);
+                    if (s == -1)
+                        epoll_close(events[i].data.fd);
+                }
+                else
+                {
+                    header_len=accept_request(events[i].data.fd);
+                    if(header_len>0)
+                    {
+                        ev.data.fd = events;
+                        ev.events = EPOLLOUT|EPOLLET;
+                        s=epoll_ctl(epoll_fd, EPOLL_CTL_MOD, events[i].data.fd, &ev);
+                        if(s==-1)
+                            epoll_close(events[i].data.fd);
+                    }
+                    else
+                    {
+                        s=epoll_ctl(epoll_fd, EPOLL_CTL_DEL, events[i].data.fd, &ev);
+                        epoll_close(events[i].data.fd);
+                    }
+                }
+            }
+            else if(events[i].events&EPOLLOUT)
+            {
+                send_response(events[i].data.fd);
+                epoll_close(events[i].data.fd);
+
+            }
+        }
+    }
 }
 
-void send_data(INT_32 fd,const char *buffer)
+void epoll_close(int fd)
 {
-    INT_32 len=strlen(buffer);
-    INT_32 r;
-    INT_32 n=0;
-    do {
-        r = send(fd, buffer+n, len*sizeof(char), 0);
-        if (r > 0)
-            n += r;
-        else if (r < 0)
-            break;
-    } while (n<len);
+
+    if(epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, &ev)==-1)
+        printf("! epoll_ctl error.\n");
+    close(fd);
 }
 
+void start_select_loop(int httpd)
+{
+    INT_32 connect_fd;
+    INT_32 retcode;
+    INT_32 result;
+    INT_32 maxfd;
+    INT_32 i;
+    INT_32 checks[MAX_CLIENTS];
+    struct sockaddr_in client_addr;
+    bzero(&client_addr, sizeof(client_addr));
+    socklen_t addr_len=sizeof(struct sockaddr_in);
+    memset(checks, 0, sizeof(checks));
+    fd_set read_fds;
+    fd_set write_fds;
+    fd_set exception_fds;
+    fd_set tmp_read_fds;
+    fd_set tmp_write_fds;
+    fd_set tmp_exception_fds;
+    FD_ZERO(&read_fds);
+    FD_ZERO(&write_fds);
+    FD_ZERO(&exception_fds);
+
+    /* wait for new connect */
+    FD_SET(httpd,&read_fds);
+    checks[httpd]=1;
+
+    struct timeval tv;
+    tv.tv_sec=5;
+    tv.tv_usec=0;
+    while (1) {
+        tmp_read_fds=read_fds;
+        tmp_write_fds=write_fds;
+        tmp_exception_fds=exception_fds;
+        maxfd=0;
+
+        for (i=0; i<MAX_CLIENTS; i++)
+        {
+            if (checks[i])
+            if (maxfd<i)
+                maxfd=i;
+        }
+
+        retcode=select(maxfd+1, &tmp_read_fds, &tmp_write_fds, &tmp_exception_fds, &tv);
+        if (retcode<0)
+            printf("select() error.");
+        else if(retcode==0)
+        {
+            continue;
+        } else {
+            // new connect
+            if (FD_ISSET(httpd,&tmp_read_fds)) {
+                connect_fd=accept(httpd, (struct sockaddr*)&client_addr, &addr_len);
+                struct clinfo *cli=(struct clinfo*)malloc(sizeof(struct clinfo));
+                cli->client_fd=connect_fd;
+                clients[connect_fd]=cli;
+
+                if (connect_fd<0)
+                    printf("! client connect error.");
+                else
+                {
+                    printf("> connect %d comming.\n",connect_fd);
+                    set_nonblocking(connect_fd);
+                    FD_SET(connect_fd,&read_fds);
+                    checks[connect_fd]=1;
+                    maxfd=(maxfd < connect_fd)?connect_fd:maxfd;
+                }
+            } else{
+                for(i=httpd+1;i<=maxfd;i++){
+                    if(checks[i])
+                    {
+                        if(FD_ISSET(i,&tmp_read_fds))
+                        {
+                            //read data or close connect
+                            result=accept_request(i);
+                            if(result==1)
+                            {
+                                FD_CLR(i,&read_fds);
+                                FD_SET(i,&write_fds);
+                            } else if (result == 0||result==-1) {
+                                close(i);
+                                FD_CLR(i, &read_fds);
+                                checks[i]=0;
+                                free(clients[i]);
+                            }
+                        }
+                        else if(FD_ISSET(i,&tmp_write_fds))
+                        {
+                            //send data
+                            send_response(i);
+                            close(i);
+                            FD_CLR(i,&write_fds);
+                            checks[i]=0;
+                            free(clients[i]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
