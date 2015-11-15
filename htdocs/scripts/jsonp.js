@@ -1,4 +1,3 @@
-<script>
 // 异常处理
 window.onerror = function(
     errorMessage,
@@ -72,4 +71,3 @@ function main() {
     };
 }
 setTimeout(main, 1000);
-</script>
