@@ -3,7 +3,7 @@
 window.onerror = function(
     errorMessage,
     scriptURI,
-    lineN`umber,
+    lineNumber,
     columnNumber,
     error
 ) {
