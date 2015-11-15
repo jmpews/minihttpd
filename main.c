@@ -24,7 +24,7 @@ INT_32 main(INT_32 argc, const char * argv[]) {
     
     if((listen_fd=startup(&port))==-1)
     {
-        perror("! init socket() error.");
+        printf("! init socket() error.");
         exit(1);
     }
     printf("> start listening at %d\n",port);
@@ -63,7 +63,7 @@ INT_32 main(INT_32 argc, const char * argv[]) {
         
         retcode=select(maxfd+1, &tmp_read_fds, &tmp_write_fds, &tmp_exception_fds, &tv);
         if (retcode<0)
-            perror("select() error.");
+            printf("select() error.");
         else if(retcode==0)
         {
             continue;
@@ -76,7 +76,7 @@ INT_32 main(INT_32 argc, const char * argv[]) {
                 clients[connect_fd]=cli;
                 
                 if (connect_fd<0)
-                    perror("! client connect error.");
+                    printf("! client connect error.");
                 else
                 {
                     printf("> connect %d comming.\n",connect_fd);
@@ -100,6 +100,8 @@ INT_32 main(INT_32 argc, const char * argv[]) {
                             } else if (result == 0||result==-1) {
                                 close(i);
                                 FD_CLR(i, &read_fds);
+                                checks[i]=0;
+                                free(clients[i]);
                             }
                         }
                         else if(FD_ISSET(i,&tmp_write_fds))

@@ -62,13 +62,13 @@ INT_32 set_nonblocking(INT_32 sockfd)
     INT_32 opts;
     opts = fcntl(sockfd, F_GETFL);
     if(opts < 0) {
-        perror("fcntl: F_GETFL");
+        printf("fcntl: F_GETFL");
         return -1;
     }
     
     opts = opts | O_NONBLOCK;
     if( fcntl(sockfd, F_SETFL, opts) < 0 ) {
-        perror("fcntl: F_SETFL");
+        printf("fcntl: F_SETFL");
         return -1;
     }
     
@@ -85,14 +85,14 @@ INT_32 startup(u_short *port)
     struct sockaddr_in server_addr;
     if((httpd=socket(AF_INET, SOCK_STREAM, 0))==-1)
     {
-        perror("! httpd start error.");
+        printf("! httpd start error.");
         exit(1);
     }
     
     INT_32 opt = SO_REUSEADDR;
     if(setsockopt(httpd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1)
     {
-        perror("httpd reuseaddr error.");
+        printf("httpd reuseaddr error.");
         exit(1);
     }
     
@@ -105,13 +105,13 @@ INT_32 startup(u_short *port)
     
     if(bind(httpd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1)
     {
-        perror("httpd bind error.");
+        printf("httpd bind error.");
         return -1;
     }
     
     if(listen(httpd, BACKLOG) == -1)
     {
-        perror("httpd listen error.");
+        printf("httpd listen error.");
         return -1;
     }
     getcwd(rootpath, sizeof(rootpath));
@@ -167,7 +167,8 @@ int accept_request(int client_fd)
     method[i]='\0';
     if(strcasecmp(method,"GET")&&strcasecmp(method,"POST"))
     {
-        perror("request method not support.");
+        printf("! request method not support.\n");
+        printf("------------");
         return -1;
     }
     while (is_space(buf[j])&&(j<sizeof(buf)))
