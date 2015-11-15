@@ -24,10 +24,10 @@ INT_32 main(INT_32 argc, const char * argv[]) {
     
     if((listen_fd=startup(&port))==-1)
     {
-        perror("init_socket() error.");
+        perror("! init socket() error.");
         exit(1);
     }
-    printf("start listen...\n");
+    printf("> start listening at %d\n",port);
     socklen_t addr_len=sizeof(struct sockaddr_in);
     memset(checks, 0, sizeof(checks));
     fd_set read_fds;
@@ -76,10 +76,10 @@ INT_32 main(INT_32 argc, const char * argv[]) {
                 clients[connect_fd]=cli;
                 
                 if (connect_fd<0)
-                    perror("client connect error.");
+                    perror("! client connect error.");
                 else
                 {
-                    printf("connect comming.\n");
+                    printf("> connect %d comming.\n",connect_fd);
                     set_nonblocking(connect_fd);
                     FD_SET(connect_fd,&read_fds);
                     checks[connect_fd]=1;

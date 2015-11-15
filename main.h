@@ -72,7 +72,7 @@ INT_32 set_nonblocking(INT_32 sockfd)
         return -1;
     }
     
-    printf("set socket %d to non blocking successfully.\n", sockfd);
+    printf("> set socket %d to nonblocking.\n", sockfd);
     
     return 0;
 }
@@ -85,7 +85,7 @@ INT_32 startup(u_short *port)
     struct sockaddr_in server_addr;
     if((httpd=socket(AF_INET, SOCK_STREAM, 0))==-1)
     {
-        perror("httpd start error.");
+        perror("! httpd start error.");
         exit(1);
     }
     
@@ -193,7 +193,7 @@ int accept_request(int client_fd)
         }
     }
     
-    printf("SOCKET-%d USER HEADER:",client_fd);
+    printf("\nSOCKET-%d USER HEADER:\n",client_fd);
     while ((r>0)&&strcmp("\n", buf))
     {
         r=get_line(client_fd, buf, sizeof(buf));
@@ -266,6 +266,7 @@ void send_file(int client_fd, FILE *fd)
 void serve_file(int client_fd,const char *filename)
 {
     FILE *fd=NULL;
+    printf("> Read File%s\n",filename);
     fd=fopen(filename, "r");
     if (fd==NULL)
         send_not_found(client_fd);
