@@ -31,6 +31,7 @@
 #define MAX_CLIENTS 1024
 #define PORT 8080
 #define MAX_BUFFER_SIZE 1024
+#define MAX_PATH_LENGTH 256
 #define SERVER_STRING "Server: jmpews-httpd/0.1.0\r\n"
 
 struct clinfo *clients[MAX_CLIENTS];
@@ -55,12 +56,64 @@ void start_epoll_loop(int httpd);
 #endif /* sockets_h */
 
 
-struct clinfo{
+typedef struct socketnode{
     int client_fd;
-    char filepath[100];
+    char *filepath;
     int filed;
-};
+    struct client *next;
+}SocketNode;
 
+SocketNode *SocketHeader;
+
+SocketNode * new_socket_node(){
+    SocketNode *tmp=(SocketNode *)malloc(sizeof(SocketNode));
+    tmp->client_fd=-1;
+    tmp->filed=0;
+    tmp->next=NULL;
+    tmp->filepath=NULL;
+    // memset(tmp->filepath,0,sizeof(char)*MAX_PATH_LENGTH);
+}
+
+SocketNode * find_socket_node(int client_fd)
+{
+    SocketNode *tmp=SocketHeader;
+    while(1)
+        if(tmp!=NULL)
+            if(tmp_read_fds->client_fd==client_fd)
+                return tmp;
+            else
+                tmp=tmp->next;
+        else
+            return NULL;
+
+}
+
+void add_socket_node(SocketNode *client)
+{
+    SocketNode *tmp=SocketHeader;
+    client->next=tmp;
+    SocketHeader=client;
+}
+
+void free_socket_node(int client_fd)
+{
+    SocketNode *tmp;
+    SocketNode *k;
+    while(1)
+        if(tmp!=NULL)
+            if(tmp->next->client_fd==client_fd)
+                break
+    if(tmp==NULL)
+    {
+        printf("! free_socket_node ERROR\n");
+        close(client_fd);
+        return;
+    }
+    k=tmp->next;
+    tmp->next=k->next;
+    free(k);
+    close(client_fd);
+}
 INT_32 set_nonblocking(INT_32 sockfd)
 {
     INT_32 opts;
@@ -102,6 +155,11 @@ INT_32 startup(int *port)
     
     //set no-blocking
     set_nonblocking(httpd);
+
+    //new socket_info
+    SocketNode *tmp=new_socket_node();
+    tmp->client_fd=httpd;
+    add_client_node(tmp);
     
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(*port);
@@ -157,7 +215,7 @@ int accept_request(int client_fd)
     char url[255];
     int r;
     struct stat st;
-    char *wwwpath;
+    char wwwpath[256];
     int i=0,j=0;
     char *query_string = NULL;
     struct clinfo *cli;
@@ -213,28 +271,26 @@ int accept_request(int client_fd)
         printf("%s",buf);
     }
 
-    cli=(struct clinfo*)malloc(sizeof(struct clinfo));
-    clients[client_fd]=cli;
-    wwwpath=clients[client_fd]->filepath;
     sprintf(wwwpath, "%s/htdocs%s",rootpath,url);
-    clients[client_fd]->filed=1;
     if (wwwpath[strlen(wwwpath)-1]=='/')
         strcat(wwwpath, "index.html");
-    if (stat(wwwpath,&st)==-1)
-        clients[client_fd]->filed=0;
-    else
+    else{
         if((st.st_mode&S_IFMT)==S_IFDIR)
-        {
             strcat(wwwpath, "/index.html");
-            if((st.st_mode&S_IFMT)!=S_IFREG)
-                clients[client_fd]->filed=0;
-        }
+    }
+    if((stat(wwwpath,&st)!=-1)&&((st.st_mode&S_IFMT)!=S_IFREG))
+    {
+        SocketNode * tmp= find_client_node(client_fd);
+        tmp->filepath=(char *)malloc(strlen(wwwpath)*sizeof(char));
+        strcpy(tmp->filepath,wwwpath);
+    }
+    wwwpath[0]='\0';
     return j;
 }
 
 void send_response(int client_fd)
 {
-    if(clients[client_fd]->filed==1)
+    if(clients[client_fd]->filepath!=NULL)
         serve_file(client_fd, clients[client_fd]->filepath);
     else
         send_not_found(client_fd);
@@ -393,7 +449,6 @@ void start_epoll_loop(int httpd)
                     }
                     else
                     {
-                        s=epoll_ctl(epoll_fd, EPOLL_CTL_DEL, events[i].data.fd, &ev);
                         epoll_close(epoll_fd,events[i].data.fd,&ev);
                     }
                 }
@@ -413,11 +468,8 @@ void epoll_close(int epoll_fd,int fd,struct epoll_event *ev)
 {
 
     if(epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, ev)==-1)
-        printf("! epoll_ctl error.\n");
-    close(fd);
-    if(clients[fd]!=NULL)
-        free(clients[fd]);
-    clients[fd]=NULL;
+        printf("! close epoll_ctl error.\n");
+    free_socket_node(fd);
 }
 
 void start_select_loop(int httpd)
