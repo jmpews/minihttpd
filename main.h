@@ -56,7 +56,7 @@ void start_epoll_loop(int httpd);
 
 struct clinfo{
     int client_fd;
-    char req_file[100];
+    char filepath[100];
     int filed;
 };
 
@@ -159,7 +159,10 @@ int accept_request(int client_fd)
     char *wwwpath;
     int i=0,j=0;
     char *query_string = NULL;
-    wwwpath=clients[client_fd]->req_file;
+    struct clinfo *cli;
+
+
+
     r=get_line(client_fd, buf, sizeof(buf));
     if(r==0)
     {
@@ -209,9 +212,11 @@ int accept_request(int client_fd)
         j+=r;
         printf("%s",buf);
     }
-    
+
+    cli=(struct clinfo*)malloc(sizeof(struct clinfo));
+    clients[client_fd]=cli;
+    wwwpath=clients[client_fd]->filepath;
     sprintf(wwwpath, "%s/htdocs%s",rootpath,url);
-    //sprintf(wwwpath, "/Users/jmpews/Desktop/netcore/netcore/htdocs/index.html");
     clients[client_fd]->filed=1;
     if (wwwpath[strlen(wwwpath)-1]=='/')
         strcat(wwwpath, "index.html");
