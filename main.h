@@ -9,6 +9,7 @@
 //2. string的结尾字符\0
 //3. recv的MSG_PEEK参数，仅仅copy读取的buff，并不删除。
 //4. malloc 要考虑所有可能的异常情况然后free
+//5. segmentation fault (core dumped),内存问题,有没有初始化等等!
 
 #ifndef sockets_h
 #define sockets_h
@@ -235,7 +236,7 @@ int accept_request(int client_fd)
 void send_response(int client_fd)
 {
     if(clients[client_fd]->filed==1)
-        serve_file(client_fd, clients[client_fd]->req_file);
+        serve_file(client_fd, clients[client_fd]->filepath);
     else
         send_not_found(client_fd);
 }
