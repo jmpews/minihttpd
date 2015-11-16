@@ -72,7 +72,7 @@ INT_32 set_nonblocking(INT_32 sockfd)
     
     opts = opts | O_NONBLOCK;
     if( fcntl(sockfd, F_SETFL, opts) < 0 ) {
-        printf("fcntl: F_SETFL");
+        printf("! fcntl: F_SETFL");
         return -1;
     }
     
@@ -96,7 +96,7 @@ INT_32 startup(int *port)
     INT_32 opt = SO_REUSEADDR;
     if(setsockopt(httpd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1)
     {
-        printf("httpd reuseaddr error.");
+        printf("! httpd reuseaddr error.");
         exit(1);
     }
     
@@ -180,7 +180,6 @@ int accept_request(int client_fd)
     if(strcasecmp(method,"GET")&&strcasecmp(method,"POST"))
     {
         printf("! request method not support.\n");
-        printf("------------");
         return -1;
     }
     while (is_space(buf[j])&&(j<sizeof(buf)))
@@ -365,7 +364,7 @@ void start_epoll_loop(int httpd)
         {
             if((events[i].events&EPOLLERR) || (events[i].events & EPOLLHUP))
             {
-                printf("epoll error.\n");
+                printf("! epoll error.\n");
                 //abort();
                 continue;
             }
@@ -401,7 +400,7 @@ void start_epoll_loop(int httpd)
             }
             else if(events[i].events&EPOLLOUT)
             {
-                printf("epollout\n");
+                printf("> close socket %d\n",events[i].data.fd);
                 send_response(events[i].data.fd);
                 epoll_close(epoll_fd,events[i].data.fd,&ev);
 
@@ -416,6 +415,9 @@ void epoll_close(int epoll_fd,int fd,struct epoll_event *ev)
     if(epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, ev)==-1)
         printf("! epoll_ctl error.\n");
     close(fd);
+    if(clients[fd]!=NULL)
+        free(clients[fd]);
+    clients[fd]=NULL;
 }
 
 void start_select_loop(int httpd)
@@ -462,7 +464,7 @@ void start_select_loop(int httpd)
 
         retcode=select(maxfd+1, &tmp_read_fds, &tmp_write_fds, &tmp_exception_fds, &tv);
         if (retcode<0)
-            printf("select() error.");
+            printf("! select() error.");
         else if(retcode==0)
         {
             continue;
