@@ -10,6 +10,15 @@
 //3. recv的MSG_PEEK参数，仅仅copy读取的buff，并不删除。
 //4. malloc 要考虑所有可能的异常情况然后free
 //5. segmentation fault (core dumped),内存问题,有没有初始化等等!
+//6. strcp的坑
+// malloc() 和""不一样，对于'\0',""默认长度+1
+/*  char * file1=(char *)malloc(2*sizeof(char));
+    file1[0]='a';
+    file1[1]='b';
+    file1[2]='c';
+    char * file2="ab";
+    printf("ABequal:%d\n",strcmp(file1,file2));
+    */
 
 #ifndef sockets_h
 #define sockets_h
@@ -47,7 +56,7 @@ void send_file(int client_fd, FILE *fd);
 int get_line(int sock, char *buf, int size);
 void send_headers(int client_fd);
 void send_not_found(int client);
-void serve_file(int client_fd,const char *filename);
+void serve_file(int client_fd,char *filename);
 INT_32 startup(int *port);
 void send_response(int client_fd);
 void epoll_close(int epoll_fd,int fd,struct epoll_event *ev);
@@ -300,10 +309,10 @@ int accept_request(int client_fd)
     {
         SocketNode *tmp;
         tmp= find_socket_node(client_fd);
-        tmp->filepath=(char *)malloc(strlen(wwwpath)*sizeof(char));
+        tmp->filepath=(char *)malloc((strlen(wwwpath)+1)*sizeof(char));
         strcpy(tmp->filepath,wwwpath);
+        wwwpath[strlen(wwwpath)]='\0';
     }
-    wwwpath[0]='\0';
     return j;
 }
 
@@ -311,8 +320,6 @@ void send_response(int client_fd)
 {
     SocketNode *tmp;
     tmp=find_socket_node(client_fd);
-    printf("here-------");
-    fflush(stdout);
     if(tmp==NULL)
         return;
     if(tmp->filepath!=NULL)
@@ -324,11 +331,6 @@ void send_response(int client_fd)
 
 void send_headers(int client_fd)
 {
-    
-    printf("sssssss");
-    fflush(stdout);
-    printf("%d",client_fd);
-    fflush(stdout);
     char buf[1024];
     memset(buf, 0, sizeof(buf));
     
@@ -365,21 +367,20 @@ void send_file(int client_fd, FILE *fd)
     }
 }
 
-void serve_file(int client_fd,const char *filename)
+void serve_file(int client_fd,char *filename)
 {
     FILE *fd=NULL;
-    printf("> Read File%s\n",filename);
+    printf("> Read File%s\n\n",filename);
+    
     fd=fopen(filename, "r");
-    if (fd==NULL){
-    printf("ttttttt");
-    fflush(stdout);
+    if (fd==NULL)
         send_not_found(client_fd);
-}
     else {
         send_headers(client_fd);
         send_file(client_fd, fd);
+        fclose(fd);
     }
-    fclose(fd);
+    fflush(stdout);
 }
 
 
@@ -397,8 +398,6 @@ void send_not_found(int client)
     strcat(buf, "<h5 style=\"text-align: right;\">by jmpews.</h5>\r\n");
     strcat(buf, "</body></html>");
     buf[strlen(buf)]='\0';
-    printf("%d",strlen(buf));
-    fflush(stdout);
     send(client, buf, strlen(buf), 0);
     
     /*
