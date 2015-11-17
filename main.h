@@ -53,19 +53,22 @@ void send_response(int client_fd);
 void epoll_close(int epoll_fd,int fd,struct epoll_event *ev);
 void start_epoll_loop(int httpd);
 
-#endif /* sockets_h */
-
-
+//connect链表
 typedef struct socketnode{
     int client_fd;
     char *filepath;
     int filed;
-    struct client *next;
+    struct socketnode *next;
 }SocketNode;
 
+SocketNode *find_socket_node(int client_fd);
+void add_socket_node(SocketNode *client);
+void free_socket_node(int client_fd);
+
+#endif /* sockets_h */
 SocketNode *SocketHeader;
 
-SocketNode * new_socket_node(){
+SocketNode *new_socket_node(){
     SocketNode *tmp=(SocketNode *)malloc(sizeof(SocketNode));
     tmp->client_fd=-1;
     tmp->filed=0;
@@ -74,12 +77,12 @@ SocketNode * new_socket_node(){
     // memset(tmp->filepath,0,sizeof(char)*MAX_PATH_LENGTH);
 }
 
-SocketNode * find_socket_node(int client_fd)
+SocketNode *find_socket_node(int client_fd)
 {
     SocketNode *tmp=SocketHeader;
     while(1)
         if(tmp!=NULL)
-            if(tmp_read_fds->client_fd==client_fd)
+            if(tmp->client_fd==client_fd)
                 return tmp;
             else
                 tmp=tmp->next;
@@ -102,7 +105,7 @@ void free_socket_node(int client_fd)
     while(1)
         if(tmp!=NULL)
             if(tmp->next->client_fd==client_fd)
-                break
+                break;
     if(tmp==NULL)
     {
         printf("! free_socket_node ERROR\n");
@@ -159,7 +162,7 @@ INT_32 startup(int *port)
     //new socket_info
     SocketNode *tmp=new_socket_node();
     tmp->client_fd=httpd;
-    add_client_node(tmp);
+    add_socket_node(tmp);
     
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(*port);
@@ -280,7 +283,8 @@ int accept_request(int client_fd)
     }
     if((stat(wwwpath,&st)!=-1)&&((st.st_mode&S_IFMT)!=S_IFREG))
     {
-        SocketNode * tmp= find_client_node(client_fd);
+        SocketNode *tmp;
+        tmp= find_socket_node(client_fd);
         tmp->filepath=(char *)malloc(strlen(wwwpath)*sizeof(char));
         strcpy(tmp->filepath,wwwpath);
     }
@@ -290,8 +294,10 @@ int accept_request(int client_fd)
 
 void send_response(int client_fd)
 {
-    if(clients[client_fd]->filepath!=NULL)
-        serve_file(client_fd, clients[client_fd]->filepath);
+    SocketNode *tmp;
+    tmp=find_socket_node(client_fd);
+    if(tmp->filepath!=NULL)
+        serve_file(client_fd, tmp->filepath);
     else
         send_not_found(client_fd);
 }
@@ -472,6 +478,7 @@ void epoll_close(int epoll_fd,int fd,struct epoll_event *ev)
     free_socket_node(fd);
 }
 
+/*
 void start_select_loop(int httpd)
 {
     INT_32 connect_fd;
@@ -494,7 +501,7 @@ void start_select_loop(int httpd)
     FD_ZERO(&write_fds);
     FD_ZERO(&exception_fds);
 
-    /* wait for new connect */
+    // wait for new connect
     FD_SET(httpd,&read_fds);
     checks[httpd]=1;
 
@@ -572,3 +579,4 @@ void start_select_loop(int httpd)
         }
     }
 }
+*/
