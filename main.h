@@ -100,19 +100,34 @@ void add_socket_node(SocketNode *client)
 
 void free_socket_node(int client_fd)
 {
-    SocketNode *tmp;
+    SocketNode *tmp=SocketHeader;
     SocketNode *k;
-    while(1)
-        if(tmp!=NULL)
-            if(tmp->next->client_fd==client_fd)
-                break;
     if(tmp==NULL)
     {
         printf("! free_socket_node ERROR\n");
         close(client_fd);
         return;
     }
+    if(tmp->client_fd==client_fd)
+    {
+        SocketHeader=tmp->next;
+        free(tmp);
+        close(client_fd);
+        return;
+    }
+    while((tmp->next!=NULL))
+    {
+        if(tmp->next->client_fd==client_fd)
+            break;
+        tmp=tmp->next;
+    }
     k=tmp->next;
+    if(k==NULL)
+    {
+        printf("! free_socket_nod not found client_fd\n");
+        close(client_fd);
+        return;
+    } 
     tmp->next=k->next;
     free(k);
     close(client_fd);
@@ -163,6 +178,7 @@ INT_32 startup(int *port)
     SocketNode *tmp=new_socket_node();
     tmp->client_fd=httpd;
     add_socket_node(tmp);
+    //SocketHeader=tmp;
     
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(*port);
@@ -277,11 +293,10 @@ int accept_request(int client_fd)
     sprintf(wwwpath, "%s/htdocs%s",rootpath,url);
     if (wwwpath[strlen(wwwpath)-1]=='/')
         strcat(wwwpath, "index.html");
-    else{
+    else
         if((st.st_mode&S_IFMT)==S_IFDIR)
             strcat(wwwpath, "/index.html");
-    }
-    if((stat(wwwpath,&st)!=-1)&&((st.st_mode&S_IFMT)!=S_IFREG))
+    if((stat(wwwpath,&st)!=-1)&&((st.st_mode&S_IFMT)==S_IFREG))
     {
         SocketNode *tmp;
         tmp= find_socket_node(client_fd);
@@ -296,6 +311,10 @@ void send_response(int client_fd)
 {
     SocketNode *tmp;
     tmp=find_socket_node(client_fd);
+    printf("here-------");
+    fflush(stdout);
+    if(tmp==NULL)
+        return;
     if(tmp->filepath!=NULL)
         serve_file(client_fd, tmp->filepath);
     else
@@ -306,6 +325,10 @@ void send_response(int client_fd)
 void send_headers(int client_fd)
 {
     
+    printf("sssssss");
+    fflush(stdout);
+    printf("%d",client_fd);
+    fflush(stdout);
     char buf[1024];
     memset(buf, 0, sizeof(buf));
     
@@ -330,6 +353,8 @@ void send_headers(int client_fd)
 
 void send_file(int client_fd, FILE *fd)
 {
+    printf("here---");
+    fflush(stdout);
     char buf[1024];
     memset(buf, 0, sizeof(buf));
     fgets(buf, sizeof(buf), fd);
@@ -345,8 +370,11 @@ void serve_file(int client_fd,const char *filename)
     FILE *fd=NULL;
     printf("> Read File%s\n",filename);
     fd=fopen(filename, "r");
-    if (fd==NULL)
+    if (fd==NULL){
+    printf("ttttttt");
+    fflush(stdout);
         send_not_found(client_fd);
+}
     else {
         send_headers(client_fd);
         send_file(client_fd, fd);
@@ -369,6 +397,8 @@ void send_not_found(int client)
     strcat(buf, "<h5 style=\"text-align: right;\">by jmpews.</h5>\r\n");
     strcat(buf, "</body></html>");
     buf[strlen(buf)]='\0';
+    printf("%d",strlen(buf));
+    fflush(stdout);
     send(client, buf, strlen(buf), 0);
     
     /*
@@ -441,6 +471,9 @@ void start_epoll_loop(int httpd)
                     s=epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &ev);
                     if (s == -1)
                         epoll_close(epoll_fd,events[i].data.fd,&ev);
+                    SocketNode *tmp=new_socket_node();
+                    tmp->client_fd=client_fd;
+                    add_socket_node(tmp);
                 }
                 else
                 {
@@ -461,7 +494,6 @@ void start_epoll_loop(int httpd)
             }
             else if(events[i].events&EPOLLOUT)
             {
-                printf("> close socket %d\n",events[i].data.fd);
                 send_response(events[i].data.fd);
                 epoll_close(epoll_fd,events[i].data.fd,&ev);
 
