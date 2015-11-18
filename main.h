@@ -111,12 +111,14 @@ void free_socket_node(int client_fd)
 {
     SocketNode *tmp=SocketHeader;
     SocketNode *k;
+    //空链表
     if(tmp==NULL)
     {
         printf("! free_socket_node ERROR\n");
         close(client_fd);
         return;
     }
+    //链表头是要找的node
     if(tmp->client_fd==client_fd)
     {
         SocketHeader=tmp->next;
@@ -131,6 +133,7 @@ void free_socket_node(int client_fd)
         tmp=tmp->next;
     }
     k=tmp->next;
+    //没找到node
     if(k==NULL)
     {
         printf("! free_socket_nod not found client_fd\n");
@@ -160,8 +163,6 @@ INT_32 set_nonblocking(INT_32 sockfd)
     
     return 0;
 }
-
-
 
 INT_32 startup(int *port)
 {
@@ -248,8 +249,6 @@ int accept_request(int client_fd)
     char *query_string = NULL;
     struct clinfo *cli;
 
-
-
     r=get_line(client_fd, buf, sizeof(buf));
     if(r==0)
     {
@@ -333,7 +332,6 @@ void send_headers(int client_fd)
 {
     char buf[1024];
     memset(buf, 0, sizeof(buf));
-    
     strcat(buf, "HTTP/1.0 200 OK\r\n");
     strcat(buf, SERVER_STRING);
     strcat(buf, "Content-Type: text/html\r\n");
@@ -355,8 +353,6 @@ void send_headers(int client_fd)
 
 void send_file(int client_fd, FILE *fd)
 {
-    printf("here---");
-    fflush(stdout);
     char buf[1024];
     memset(buf, 0, sizeof(buf));
     fgets(buf, sizeof(buf), fd);
@@ -370,8 +366,7 @@ void send_file(int client_fd, FILE *fd)
 void serve_file(int client_fd,char *filename)
 {
     FILE *fd=NULL;
-    printf("> Read File%s\n\n",filename);
-    
+    printf("> Response File: %s\n",filename);
     fd=fopen(filename, "r");
     if (fd==NULL)
         send_not_found(client_fd);
@@ -380,7 +375,6 @@ void serve_file(int client_fd,char *filename)
         send_file(client_fd, fd);
         fclose(fd);
     }
-    fflush(stdout);
 }
 
 
@@ -503,7 +497,6 @@ void start_epoll_loop(int httpd)
 
 void epoll_close(int epoll_fd,int fd,struct epoll_event *ev)
 {
-
     if(epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, ev)==-1)
         printf("! close epoll_ctl error.\n");
     free_socket_node(fd);
