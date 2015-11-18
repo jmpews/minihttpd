@@ -499,6 +499,8 @@ void epoll_close(int epoll_fd,int fd,struct epoll_event *ev)
 {
     if(epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, ev)==-1)
         printf("! close epoll_ctl error.\n");
+    else
+        printf("> close socket %d.",fd);
     free_socket_node(fd);
 }
 
