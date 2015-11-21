@@ -1,0 +1,174 @@
+/*
+   lg.css
+   FastString
+
+   Created by LucasGuimaraes.
+   Copyright 2014 LucasGuimaraes. All rights reserved.
+*/
+
+a, input, textarea, button, div {
+	outline: 0;
+}
+
+#lucaslogo {
+	background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAA6UlEQVQ4T2P8GBLyn4ECwEgTA9hjYxn+3r3L8OfYMYJuw+qCwWUAW1AQA4uJCdwrjFxcDF8LChB8bIEI88K/p08ZONLTGb5VVYE1MOvqMnCVljJ8josjzgBmZWWGfy9fMvzetQuugautDW4gSBBvIIIMQI8NkgwA2cDq5MTwvaUF7gXuujqGT6Gh2L3AM3MmwzegE1nt7OA2g8KDxdiY4f+3bwz/Hj1iYJKTI+wFfKmHe8IEwrGAbACrmxs4EBkFBBjYIyLAUj9mzMAfC8gGgLzArKkJFvp7/TrDz8WLURxIm8xEMAchKQAAaaWSkUuQI1UAAAAASUVORK5CYII=') !important;
+	width: 16px !important;
+	height: 16px !important;
+	display: inline-block;
+	vertical-align: text-top;
+	filter: url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\'><filter id=\'grayscale\'><feColorMatrix type=\'matrix\' values=\'0.3333 0.3333 0.3333 0 0 0.3333 0.3333 0.3333 0 0 0.3333 0.3333 0.3333 0 0 0 0 0 1 0\'/></filter></svg>#grayscale"); /* Firefox 10+, Firefox on Android */
+	filter: gray; /* IE6-9 */
+	-webkit-filter: grayscale(100%); /* Chrome 19+, Safari 6+, Safari 6+ iOS */
+	margin-right: 3px;
+	margin-top: 3px;
+}
+#lucaslogo:hover {
+	filter: none;
+	filter: url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\'><filter id=\'grayscale\'><feColorMatrix type=\'matrix\' values=\'1 0 0 0 0, 0 1 0 0 0, 0 0 1 0 0, 0 0 0 1 0\'/></filter></svg>#grayscale");
+	-webkit-filter: grayscale(0%);
+}
+.ucode {
+	font-family: Consolas, "Lucida Console", "OCR A Extended", Terminal, "Andale Mono", "Courier New", Courier, Fixed, monospace;
+}
+
+.aboutinfo {
+	font-family: Consolas, "Lucida Console", "OCR A Extended", Terminal, "Andale Mono", "Courier New", Courier, Fixed, monospace;
+}
+
+.hidebt {
+	display: none;
+}
+
+@media only screen and (max-height: 635px) and (max-width: 756px) {
+	#mostusedbuttons, #mufunctions {
+		display: none;
+	}
+}
+
+@media (min-height: 635px) and (min-width: 980px) {/*1024x768*/
+	.ucode {
+		height: 450px;
+	}
+
+	.freturn {
+		height: 434px;
+		max-height: 434px;
+	}
+	.hero-unit {
+		height: 424px;
+	}
+	html {
+		overflow: hidden;
+	}
+
+	.ucode_web {
+		height: 380px;
+	}
+	.freturn_web {
+		height: 364px;
+		max-height: 364px;
+	}
+	.hero-unit_web {
+		height: 354px;
+		overflow: hidden;
+	}
+}
+
+@media only screen and (min-height: 910px) {/*HD*/
+	.ucode {
+		height: 680px;
+	}
+	.freturn {
+		height: 664px;
+		max-height: 664px;
+	}
+	.hero-unit {
+		height: 654px;
+	}
+	html {
+		overflow: hidden;
+	}
+
+	.ucode_web {
+		height: 610px;
+	}
+	.freturn_web {
+		height: 594px;
+		max-height: 594px;
+	}
+	.hero-unit_web {
+		height: 594px;
+	}
+}
+
+.textoback {
+	background-image: url('../images/png/textofundo.png') !important;
+	background-repeat: no-repeat !important;
+	background-position: right bottom !important;
+}
+
+#sound {
+	width: 1px;
+	height: 1px;
+	background-color: transparent;
+	position: absolute;
+	top: 0px;
+	left: 0px;
+}
+.htmlrender {
+	max-height: 250px;
+	overflow-y: scroll;
+	overflow-x: hidden;
+	text-wrap: unrestricted;
+	word-wrap: break-word;
+	-ms-word-break: break-all;
+	word-break: break-all;
+	word-break: break-word;
+}
+
+#imgB64Alert {
+	display: none;
+}
+
+#generateImage64 {
+	width: 3500px;
+	height: 3500px;
+	position: absolute;
+	z-index: 10000;
+	top: 0px;
+	left: 0px;
+	background-color: #2f2f2f;
+	overflow: visible;
+	display: none;
+}
+
+#loadingImage64 {
+	top: 70px;
+	width: 250px;
+	height: 250px;
+	position: absolute;
+	z-index: 200000;
+	margin-left: 25px;
+	margin-right: auto;
+	background-color: #2f2f2f;
+}
+.brand span{
+	top: 1px;
+	color: #FF0000;
+}
+
+.fullTextE{
+top:0px;
+left:0px;
+width:100%;
+height:100%;
+z-index: 1000000;
+position:absolute;
+background-color:#202020;
+padding-top:2px;
+padding-left:10px;
+
+font-size: 18px;
+-webkit-user-select: text;
+max-height: 100%;
+}
