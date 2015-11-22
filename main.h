@@ -20,6 +20,8 @@
     printf("ABequal:%d\n",strcmp(file1,file2));
     */
 
+//7. Content-Type: 有坑,要注意设置.
+
 #ifndef sockets_h
 #define sockets_h
 
@@ -159,7 +161,7 @@ INT_32 set_nonblocking(INT_32 sockfd)
         return -1;
     }
     
-    printf("> set socket %d to nonblocking.\n", sockfd);
+    printf("> Socket[%d] non-blocking.\n", sockfd);
     
     return 0;
 }
@@ -290,7 +292,7 @@ int accept_request(int client_fd)
         }
     }
     
-    printf("\nSOCKET-%d USER HEADER:\n",client_fd);
+    printf("--------------------\nSocket[%d] Header:\n",client_fd);
     while ((r>0)&&strcmp("\n", buf))
     {
         r=get_line(client_fd, buf, sizeof(buf));
@@ -367,7 +369,7 @@ void send_file(int client_fd, FILE *fd)
 void serve_file(int client_fd,char *filename)
 {
     FILE *fd=NULL;
-    printf("> Response File: %s\n",filename);
+    printf("> Socket[%d] Send : %s\n",client_fd,filename);
     fd=fopen(filename, "r");
     if (fd==NULL)
         send_not_found(client_fd);
@@ -492,6 +494,10 @@ void start_epoll_loop(int httpd)
                 epoll_close(epoll_fd,events[i].data.fd,&ev);
 
             }
+            else{
+                printf("uncatched.");
+                epoll_close(epoll_fd,events[i].data.fd,&ev);
+            }
         }
     }
 }
@@ -501,7 +507,7 @@ void epoll_close(int epoll_fd,int fd,struct epoll_event *ev)
     if(epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, ev)==-1)
         printf("! close epoll_ctl error.\n");
     else
-        printf("> close socket %d.\n",fd);
+        printf("> Socket[%d] close.\n",fd);
     free_socket_node(fd);
 }
 
