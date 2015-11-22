@@ -21,6 +21,7 @@
     */
 
 //7. Content-Type: 有坑,要注意设置.
+//8. 对于错误处理要果断,如果该错误是自己assert不会出错,那就直接打印error code然后exit,不要强行继续处理.
 
 #ifndef sockets_h
 #define sockets_h
@@ -40,9 +41,7 @@
 #define INT_32 int
 #define BACKLOG 20
 #define MAX_CLIENTS 1024
-#define PORT 8080
-#define MAX_BUFFER_SIZE 1024
-#define MAX_PATH_LENGTH 256
+#define BUFFER_SIZE 1024
 #define SERVER_STRING "Server: jmpews-httpd/0.1.0\r\n"
 
 struct clinfo *clients[MAX_CLIENTS];
@@ -50,15 +49,13 @@ char rootpath[50];
 
 #define is_space(x) isspace((int)(x))
 
-INT_32 init_socket(INT_32 *listen_fd, struct sockaddr_in *server_addr);
 INT_32 read_data(INT_32 fd,char *buffer);
 void send_data(INT_32 fd,const char *buffer);
 int accept_request(int client_fd);
-void send_file(int client_fd, FILE *fd);
+void send_file(int client_fd, char *path);
 int get_line(int sock, char *buf, int size);
 void send_headers(int client_fd);
 void send_not_found(int client);
-void serve_file(int client_fd,char *filename);
 INT_32 startup(int *port);
 void send_response(int client_fd);
 void epoll_close(int epoll_fd,int fd,struct epoll_event *ev);
@@ -141,7 +138,7 @@ void free_socket_node(int client_fd)
         printf("! free_socket_nod not found client_fd\n");
         close(client_fd);
         return;
-    } 
+    }
     tmp->next=k->next;
     free(k);
     close(client_fd);
@@ -154,15 +151,15 @@ INT_32 set_nonblocking(INT_32 sockfd)
         printf("! fcntl: F_GETFL");
         return -1;
     }
-    
+
     opts = opts | O_NONBLOCK;
     if( fcntl(sockfd, F_SETFL, opts) < 0 ) {
         printf("! fcntl: F_SETFL");
         return -1;
     }
-    
+
     printf("> Socket[%d] non-blocking.\n", sockfd);
-    
+
     return 0;
 }
 
@@ -175,14 +172,14 @@ INT_32 startup(int *port)
         printf("! httpd start error.");
         exit(1);
     }
-    
+
     INT_32 opt = SO_REUSEADDR;
     if(setsockopt(httpd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1)
     {
         printf("! httpd reuseaddr error.");
         exit(1);
     }
-    
+
     //set no-blocking
     set_nonblocking(httpd);
 
@@ -191,17 +188,17 @@ INT_32 startup(int *port)
     tmp->client_fd=httpd;
     //add_socket_node(tmp);
     SocketHeader=tmp;
-    
+
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(*port);
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    
-    if(bind(httpd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1)
+
+    if(bind(httpd, (struct sockaddr *)&server_addr, sizeof(struct sockaddr_in)) == -1)
     {
         printf("! httpd bind error.\n");
         return -1;
     }
-    
+
     if(listen(httpd, BACKLOG) == -1)
     {
         printf("! httpd listen error.\n");
@@ -241,24 +238,24 @@ int get_line(int sock, char *buf, int size){
 
 int accept_request(int client_fd)
 {
-    char buf[1024];
-    char method[255];
+    char buf[BUFFER_SIZE];
+    char method[BUFFER_SIZE];
     char url[255];
     int r;
-    struct stat st;
     char wwwpath[256];
     int i=0,j=0;
     char *query_string = NULL;
+    SocketNode *tmp=NULL;
     struct clinfo *cli;
 
-    r=get_line(client_fd, buf, sizeof(buf));
+    r=get_line(client_fd, buf, BUFFER_SIZE);
     if(r==0)
     {
         //读取len 0数据,close
         return 0;
     }
     //read request method
-    while (!(is_space(buf[j]))&&i<sizeof(buf))
+    while (!(is_space(buf[j]))&&i<BUFFER_SIZE)
     {
         method[i]=buf[j];
         i++;j++;
@@ -269,11 +266,11 @@ int accept_request(int client_fd)
         printf("! request method not support.\n");
         return -1;
     }
-    while (is_space(buf[j])&&(j<sizeof(buf)))
+    while (is_space(buf[j])&&(j<BUFFER_SIZE))
         j++;
-    
+
     i=0;
-    while (!is_space(buf[j])&&(j<sizeof(buf)))
+    while (!is_space(buf[j])&&(j<BUFFER_SIZE))
     {
         url[i]=buf[j];
         i++;j++;
@@ -291,56 +288,62 @@ int accept_request(int client_fd)
             query_string++;
         }
     }
-    
+
     printf("--------------------\nSocket[%d] Header:\n",client_fd);
     while ((r>0)&&strcmp("\n", buf))
     {
-        r=get_line(client_fd, buf, sizeof(buf));
+        r=get_line(client_fd, buf, BUFFER_SIZE);
         j+=r;
         printf("%s",buf);
     }
 
     sprintf(wwwpath, "%s/htdocs%s",rootpath,url);
-    if (wwwpath[strlen(wwwpath)-1]=='/')
-        strcat(wwwpath, "index.html");
-    else
-        if((st.st_mode&S_IFMT)==S_IFDIR)
-            strcat(wwwpath, "/index.html");
-    if((stat(wwwpath,&st)!=-1)&&((st.st_mode&S_IFMT)==S_IFREG))
-    {
-        SocketNode *tmp;
-        tmp= find_socket_node(client_fd);
-        tmp->filepath=(char *)malloc((strlen(wwwpath)+1)*sizeof(char));
-        strcpy(tmp->filepath,wwwpath);
-        wwwpath[strlen(wwwpath)]='\0';
-    }
+    tmp= find_socket_node(client_fd);
+    tmp->filepath=(char *)malloc((strlen(wwwpath)+11)*sizeof(char));
+    strcpy(tmp->filepath,wwwpath);
+    tmp->filepath[strlen(wwwpath)]='\0';
     return j;
 }
 
 void send_response(int client_fd)
 {
+    struct stat st;
     SocketNode *tmp;
+    char *path;
     tmp=find_socket_node(client_fd);
     if(tmp==NULL)
-        return;
+    {
+        printf("! find_socket_node error.");
+        exit(1);
+    }
     if(tmp->filepath!=NULL)
-        serve_file(client_fd, tmp->filepath);
-    else
-        send_not_found(client_fd);
+    {
+        path=tmp->filepath;
+        if(path[strlen(path)-1]=='/')
+            strcat(path,"index.html");
+        path[strlen(path)]='\0';
+        if((stat(path,&st)!=-1)&&((st.st_mode&S_IFMT)==S_IFREG))
+        {
+            send_file(client_fd,path);
+            return;
+        }
+    }
+    send_not_found(client_fd);
+    return;
 }
 
 
 void send_headers(int client_fd)
 {
-    char buf[1024];
-    memset(buf, 0, sizeof(buf));
+    char buf[BUFFER_SIZE];
+    memset(buf, 0, BUFFER_SIZE);
     strcat(buf, "HTTP/1.0 200 OK\r\n");
     strcat(buf, SERVER_STRING);
     //strcat(buf, "Content-Type: text/html\r\n");
     strcat(buf, "\r\n");
     send(client_fd, buf, strlen(buf), 0);
-    
-    
+
+
     /*
     sprintf(buf, "HTTP/1.0 200 OK\r\n");
     send(client_fd, buf, strlen(buf), 0);
@@ -353,38 +356,45 @@ void send_headers(int client_fd)
     */
 }
 
-void send_file(int client_fd, FILE *fd)
+void send_file(int client_fd, char *path)
 {
-    char buf[1024];
-    memset(buf, 0, sizeof(buf));
-    do{
-        fgets(buf, sizeof(buf), fd);
-        while(-1==send(client_fd, buf, strlen(buf), 0)){
-              printf("send errror\n");
-              continue;
-        }
-    }while (!feof(fd));
-}
+    //if((st.st_mode&S_IFMT)==S_IFDIR)
+    FILE *fd;
+    long file_length=0;
+    char buf[BUFFER_SIZE];
+    size_t r=0;
 
-void serve_file(int client_fd,char *filename)
-{
-    FILE *fd=NULL;
-    printf("> Socket[%d] Send : %s\n",client_fd,filename);
-    fd=fopen(filename, "r");
-    if (fd==NULL)
-        send_not_found(client_fd);
-    else {
-        send_headers(client_fd);
-        send_file(client_fd, fd);
-        fclose(fd);
+    fd=fopen(path,"r");
+    if(fd==NULL)
+    {
+        perror("! send_file/fopen error\n");
+        exit(1);
     }
+    fseek(fd,0,SEEK_END);
+    file_length=ftell(fd);
+    rewind(fd);
+
+    send_headers(client_fd);
+
+    do
+    {
+        r=fread(buf, sizeof(char), BUFFER_SIZE,fd);
+        if(send(client_fd,buf,BUFFER_SIZE,0)<0)
+        {
+            printf("! send_file/send error\n");
+            break;
+        }
+    }while(r>0);
+    fclose(fd);
+
+    printf("> Socket[%d] Send : %s\n",client_fd,path);
 }
 
 
 void send_not_found(int client)
 {
-    char buf[1024];
-    memset(buf, 0, sizeof(buf));
+    char buf[BUFFER_SIZE];
+    memset(buf, 0, BUFFER_SIZE);
     strcat(buf, "HTTP/1.0 404 NOT FOUND\r\n");
     strcat(buf, SERVER_STRING);
     strcat(buf, "Content-Type: text/html\r\n");
@@ -506,9 +516,8 @@ void epoll_close(int epoll_fd,int fd,struct epoll_event *ev)
 {
     if(epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, ev)==-1)
         printf("! close epoll_ctl error.\n");
-    else
-        printf("> Socket[%d] close.\n",fd);
     free_socket_node(fd);
+    printf("> Socket[%d] close.\n",fd);
 }
 
 /*
