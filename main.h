@@ -52,7 +52,7 @@ char rootpath[50];
 INT_32 read_data(INT_32 fd,char *buffer);
 void send_data(INT_32 fd,const char *buffer);
 int accept_request(int client_fd);
-long send_file(int client_fd, struct socketnode *tmp);
+long send_file(int client_fd, struct snode *tmp);
 int get_line(int sock, char *buf, int size);
 void send_headers(int client_fd);
 void send_not_found(int client);
@@ -62,11 +62,11 @@ void epoll_close(int epoll_fd,int fd,struct epoll_event *ev);
 void start_epoll_loop(int httpd);
 
 //connect链表
-typedef struct socketnode{
+typedef struct snode{
     int client_fd;
     char *filepath;
     long slen;
-    struct socketnode *next;
+    struct snode *next;
 }SocketNode;
 
 SocketNode *find_socket_node(int client_fd);
@@ -363,7 +363,7 @@ void send_headers(int client_fd)
     */
 }
 
-long send_file(int client_fd, struct socketnode *tmp)
+long send_file(int client_fd, SocketNode *tmp)
 {
     //if((st.st_mode&S_IFMT)==S_IFDIR)
     FILE *fd;
