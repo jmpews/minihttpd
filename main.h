@@ -371,6 +371,7 @@ long send_file(int client_fd, SocketNode *tmp)
     long file_length=0;
     char buf[BUFFER_SIZE];
     size_t r=0;
+    long t;
 
     fd=fopen(tmp->filepath,"r");
     if(fd==NULL)
@@ -387,19 +388,22 @@ long send_file(int client_fd, SocketNode *tmp)
         fseek(fd, tmp->slen, SEEK_SET);
     else
         send_headers(client_fd);
-
-    do
+    r=fread(buf, sizeof(char), BUFFER_SIZE,fd);
+    while(r>0)
     {
-        r=fread(buf, sizeof(char), BUFFER_SIZE,fd);
-        if(send(client_fd,buf,BUFFER_SIZE,0)<0)
+        t=send(client_fd,buf,r,0);
+        if(t<0)
         {
             //发送缓冲区满了
-            printf("! send_file/send_buffer_over error\n");
+            perror("! send_file/send_buffer_over error\n");
             break;
         }
-    }while(r>0);
+        else
+            tmp->slen+=t;
+        r=fread(buf, sizeof(char), BUFFER_SIZE,fd);
+    }
 
-    if(ftell(fd)<file_length)
+    if((tmp->slen+1)<file_length)
     {
         tmp->slen = ftell(fd);
         printf("> Socket[%d] Send(Yet) : %s\n",client_fd,tmp->filepath);
