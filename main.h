@@ -187,8 +187,8 @@ INT_32 startup(int *port)
     //new socket_info
     SocketNode *tmp=new_socket_node();
     tmp->client_fd=httpd;
-    add_socket_node(tmp);
-    //SocketHeader=tmp;
+    //add_socket_node(tmp);
+    SocketHeader=tmp;
     
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(*port);
@@ -334,7 +334,7 @@ void send_headers(int client_fd)
     memset(buf, 0, sizeof(buf));
     strcat(buf, "HTTP/1.0 200 OK\r\n");
     strcat(buf, SERVER_STRING);
-    strcat(buf, "Content-Type: text/html\r\n");
+    //strcat(buf, "Content-Type: text/html\r\n");
     strcat(buf, "\r\n");
     send(client_fd, buf, strlen(buf), 0);
     
@@ -355,12 +355,13 @@ void send_file(int client_fd, FILE *fd)
 {
     char buf[1024];
     memset(buf, 0, sizeof(buf));
-    fgets(buf, sizeof(buf), fd);
-    while (!feof(fd))
-    {
-        send(client_fd, buf, strlen(buf), 0);
+    do{
         fgets(buf, sizeof(buf), fd);
-    }
+        while(-1==send(client_fd, buf, strlen(buf), 0)){
+              printf("send errror\n");
+              continue;
+        }
+    }while (!feof(fd));
 }
 
 void serve_file(int client_fd,char *filename)
