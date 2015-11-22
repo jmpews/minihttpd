@@ -52,12 +52,12 @@ char rootpath[50];
 INT_32 read_data(INT_32 fd,char *buffer);
 void send_data(INT_32 fd,const char *buffer);
 int accept_request(int client_fd);
-void send_file(int client_fd, char *path);
+long send_file(int client_fd, struct socketnode *tmp);
 int get_line(int sock, char *buf, int size);
 void send_headers(int client_fd);
 void send_not_found(int client);
 INT_32 startup(int *port);
-void send_response(int client_fd);
+long send_response(int client_fd);
 void epoll_close(int epoll_fd,int fd,struct epoll_event *ev);
 void start_epoll_loop(int httpd);
 
@@ -65,7 +65,7 @@ void start_epoll_loop(int httpd);
 typedef struct socketnode{
     int client_fd;
     char *filepath;
-    int filed;
+    long slen;
     struct socketnode *next;
 }SocketNode;
 
@@ -79,7 +79,7 @@ SocketNode *SocketHeader;
 SocketNode *new_socket_node(){
     SocketNode *tmp=(SocketNode *)malloc(sizeof(SocketNode));
     tmp->client_fd=-1;
-    tmp->filed=0;
+    tmp->slen=-1;
     tmp->next=NULL;
     tmp->filepath=NULL;
     // memset(tmp->filepath,0,sizeof(char)*MAX_PATH_LENGTH);
@@ -305,18 +305,25 @@ int accept_request(int client_fd)
     return j;
 }
 
-void send_response(int client_fd)
+long send_response(int client_fd)
 {
     struct stat st;
     SocketNode *tmp;
     char *path;
+    long r;
     tmp=find_socket_node(client_fd);
+
     if(tmp==NULL)
     {
         printf("! find_socket_node error.");
         exit(1);
     }
-    if(tmp->filepath!=NULL)
+    if(tmp->slen>0)
+    {
+        r=send_file(client_fd,tmp);
+        return r;
+    }
+    else if(tmp->filepath!=NULL)
     {
         path=tmp->filepath;
         if(path[strlen(path)-1]=='/')
@@ -324,12 +331,12 @@ void send_response(int client_fd)
         path[strlen(path)]='\0';
         if((stat(path,&st)!=-1)&&((st.st_mode&S_IFMT)==S_IFREG))
         {
-            send_file(client_fd,path);
-            return;
+            r=send_file(client_fd,tmp);
+            return r;
         }
     }
     send_not_found(client_fd);
-    return;
+    return 0;
 }
 
 
@@ -356,7 +363,7 @@ void send_headers(int client_fd)
     */
 }
 
-void send_file(int client_fd, char *path)
+long send_file(int client_fd, struct socketnode *tmp)
 {
     //if((st.st_mode&S_IFMT)==S_IFDIR)
     FILE *fd;
@@ -364,7 +371,7 @@ void send_file(int client_fd, char *path)
     char buf[BUFFER_SIZE];
     size_t r=0;
 
-    fd=fopen(path,"r");
+    fd=fopen(tmp->filepath,"r");
     if(fd==NULL)
     {
         perror("! send_file/fopen error\n");
@@ -374,20 +381,35 @@ void send_file(int client_fd, char *path)
     file_length=ftell(fd);
     rewind(fd);
 
-    send_headers(client_fd);
+    //设置文件当前指针,为上次没有读完的
+    if(tmp->slen>0)
+        fseek(fd, tmp->slen, SEEK_SET);
+    else
+        send_headers(client_fd);
 
     do
     {
         r=fread(buf, sizeof(char), BUFFER_SIZE,fd);
         if(send(client_fd,buf,BUFFER_SIZE,0)<0)
         {
-            printf("! send_file/send error\n");
+            //发送缓冲区满了
+            printf("! send_file/send_buffer_over error\n");
             break;
         }
     }while(r>0);
-    fclose(fd);
 
-    printf("> Socket[%d] Send : %s\n",client_fd,path);
+    if(ftell(fd)<file_length)
+    {
+        tmp->slen = ftell(fd);
+        printf("> Socket[%d] Send(Yet) : %s\n",client_fd,tmp->filepath);
+        return tmp->slen;
+    }
+    else
+    {
+        tmp->slen = 0;
+        printf("> Socket[%d] Send(Over) : %s\n", client_fd, tmp->filepath);
+        return 0;
+    }
 }
 
 
@@ -433,6 +455,7 @@ void start_epoll_loop(int httpd)
 {
     int epoll_fd,nfds;
     int client_fd;
+    long slen;
     int s;
     int i;
     int header_len=0;
@@ -500,8 +523,9 @@ void start_epoll_loop(int httpd)
             }
             else if(events[i].events&EPOLLOUT)
             {
-                send_response(events[i].data.fd);
-                epoll_close(epoll_fd,events[i].data.fd,&ev);
+                slen=send_response(events[i].data.fd);
+                if(0==slen)
+                    epoll_close(epoll_fd,events[i].data.fd,&ev);
 
             }
             else{
