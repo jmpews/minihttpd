@@ -52,7 +52,7 @@ char rootpath[50];
 INT_32 read_data(INT_32 fd,char *buffer);
 void send_data(INT_32 fd,const char *buffer);
 int accept_request(int client_fd);
-long send_file(int client_fd, struct snode *tmp);
+
 int get_line(int sock, char *buf, int size);
 void send_headers(int client_fd);
 void send_not_found(int client);
@@ -68,7 +68,7 @@ typedef struct snode{
     long slen;
     struct snode *next;
 }SocketNode;
-
+long send_file(int client_fd, SocketNode *tmp);
 SocketNode *find_socket_node(int client_fd);
 void add_socket_node(SocketNode *client);
 void free_socket_node(int client_fd);
@@ -82,6 +82,7 @@ SocketNode *new_socket_node(){
     tmp->slen=-1;
     tmp->next=NULL;
     tmp->filepath=NULL;
+    return tmp;
     // memset(tmp->filepath,0,sizeof(char)*MAX_PATH_LENGTH);
 }
 
