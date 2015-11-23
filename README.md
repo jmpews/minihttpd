@@ -3,15 +3,22 @@
 可以将自己的脚本放到该目录下，每次push，需要时直接clone或pull，就立即可以提供web服务。
 
 # Use it ?
+```
+Index
+Index:http://xxx.xx/index.html
 
-> Index
-> Index:http://xxx.xx/index.html
+jsonp 一些xss脚本(from http://root.cool)
+json:http://xxx.xx/jsonp.js
 
-> jsonp 一些xss脚本(from http://root.cool)
-> json:http://xxx.xx/jsonp.js
+jmp2string 提供全面的encode/decode(modify http://faststring.lgvirtual.com/)
+jmp2string http://xxx.xx/scripts/jmp2string/index.htm
 
-> jmp2string 提供全面的encode/decode(modify http://faststring.lgvirtual.com/)
-> jmp2string http://xxx.xx/scripts/jmp2string/index.htm
+csrf 收集的关于csrf的知识
+csrf http://xxx.xx/scripts/csrf/csrf.form.html
+
+tool.site.txt
+tools http://xxx.xx/tool.site.txt
+```
 
 # Day Log
 ## 2015.11.14
