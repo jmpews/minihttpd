@@ -1,5 +1,6 @@
-# minihttpd(pure c)
+# minihttpd ( writed b pure c )
 快速提供web服务，采用epoll。
+
 可以将自己的脚本放到该目录下，每次push，需要时直接clone或pull，就立即可以提供web服务。
 
 # Use it ?
