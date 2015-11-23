@@ -22,7 +22,7 @@
 
 //7. Content-Type: 有坑,要注意设置.
 //8. 对于错误处理要果断,如果该错误是自己assert不会出错,那就直接打印error code然后exit,不要强行继续处理.
-
+//9. 发送缓冲区的处理,8k左右字节,read了多少数据,就send多少数据,如果send返回缓冲区满了异常,那就重新将事件丢入,循环.
 #ifndef sockets_h
 #define sockets_h
 
@@ -388,6 +388,7 @@ long send_file(int client_fd, SocketNode *tmp)
         fseek(fd, tmp->slen, SEEK_SET);
     else
         send_headers(client_fd);
+    memset(buf, 0,BUFFER_SIZE);
     r=fread(buf, sizeof(char), BUFFER_SIZE,fd);
     while(r>0)
     {
@@ -400,12 +401,12 @@ long send_file(int client_fd, SocketNode *tmp)
         }
         else
             tmp->slen+=t;
+        memset(buf, 0,BUFFER_SIZE);
         r=fread(buf, sizeof(char), BUFFER_SIZE,fd);
     }
 
     if((tmp->slen+1)<file_length)
     {
-        tmp->slen = ftell(fd);
         printf("> Socket[%d] Send(Yet) : %s\n",client_fd,tmp->filepath);
         return tmp->slen;
     }
