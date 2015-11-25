@@ -37,7 +37,7 @@
 #include <memory.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-
+#include <errno.h>
 #define INT_32 int
 #define BACKLOG 20
 #define MAX_CLIENTS 1024
@@ -62,12 +62,13 @@ void epoll_close(int epoll_fd,int fd,struct epoll_event *ev);
 void start_epoll_loop(int httpd);
 
 //connect链表
-typedef struct snode{
+typedef struct snode
+{
     int client_fd;
     char *filepath;
     long slen;
     struct snode *next;
-}SocketNode;
+} SocketNode;
 long send_file(int client_fd, SocketNode *tmp);
 SocketNode *find_socket_node(int client_fd);
 void add_socket_node(SocketNode *client);
@@ -78,7 +79,8 @@ void free_socket_node(int client_fd);
 #endif /* sockets_h */
 SocketNode *SocketHeader;
 
-SocketNode *new_socket_node(){
+SocketNode *new_socket_node()
+{
     SocketNode *tmp=(SocketNode *)malloc(sizeof(SocketNode));
     tmp->client_fd=-1;
     tmp->slen=-1;
@@ -98,10 +100,10 @@ SocketNode *find_socket_node(int client_fd)
     }
     while(tmp!=NULL)
     {
-            if(tmp->client_fd==client_fd)
-                return tmp;
-            else
-                tmp=tmp->next;
+        if(tmp->client_fd==client_fd)
+            return tmp;
+        else
+            tmp=tmp->next;
     }
     return NULL;
 
@@ -118,26 +120,27 @@ void add_socket_node(SocketNode *client)
 void check_socket_list()
 {
     SocketNode *tmp=SocketHeader;
-    printf("> check_socket_list\n");
+    //printf("> check_socket_list\n");
     while(tmp)
     {
-         printf("SOCKET[%d] live\n",tmp->client_fd);
-         tmp=tmp->next;
+        printf("SOCKET[%d] live\n",tmp->client_fd);
+        tmp=tmp->next;
     }
 }
 
 void free_socket_node(int client_fd)
 {
+    printf("> SOCKET[%d] free.\n",client_fd);
     SocketNode *tmp=SocketHeader;
     SocketNode *k;
     //空链表
     if(tmp==NULL)
     {
         printf("! free_socket_node ERROR\n");
-        close(client_fd);
-        return;
+        exit(1);
     }
     //链表头是要找的node
+    /*
     if(tmp->client_fd==client_fd)
     {
         SocketHeader=tmp->next;
@@ -145,6 +148,7 @@ void free_socket_node(int client_fd)
         close(client_fd);
         return;
     }
+    */
     while((tmp->next!=NULL))
     {
         if(tmp->next->client_fd==client_fd)
@@ -167,13 +171,15 @@ INT_32 set_nonblocking(INT_32 sockfd)
 {
     INT_32 opts;
     opts = fcntl(sockfd, F_GETFL);
-    if(opts < 0) {
+    if(opts < 0)
+    {
         printf("! fcntl: F_GETFL");
         return -1;
     }
 
     opts = opts | O_NONBLOCK;
-    if( fcntl(sockfd, F_SETFL, opts) < 0 ) {
+    if( fcntl(sockfd, F_SETFL, opts) < 0 )
+    {
         printf("! fcntl: F_SETFL");
         return -1;
     }
@@ -228,12 +234,14 @@ INT_32 startup(int *port)
     return httpd;
 }
 
-int get_line(int sock, char *buf, int size){
+int get_line(int sock, char *buf, int size)
+{
     int i=0;
     char c='\0';
     int r;
     /* 转换/r/n 到 /n */
-    while ((i<size-1)&&(c!='\n')) {
+    while ((i<size-1)&&(c!='\n'))
+    {
         r=recv(sock, &c, 1, 0);
         if(r>0)
         {
@@ -266,9 +274,10 @@ int accept_request(int client_fd)
     int i=0,j=0;
     char *query_string = NULL;
     SocketNode *tmp=NULL;
-    struct clinfo *cli;
 
     r=get_line(client_fd, buf, BUFFER_SIZE);
+    printf("--------------------\nSocket[%d] Header:\n",client_fd);
+    printf("%s",buf);
     if(r==0)
     {
         //读取len 0数据,close
@@ -278,7 +287,8 @@ int accept_request(int client_fd)
     while (!(is_space(buf[j]))&&i<BUFFER_SIZE)
     {
         method[i]=buf[j];
-        i++;j++;
+        i++;
+        j++;
     }
     method[i]='\0';
     if(strcasecmp(method,"GET")&&strcasecmp(method,"POST"))
@@ -293,7 +303,8 @@ int accept_request(int client_fd)
     while (!is_space(buf[j])&&(j<BUFFER_SIZE))
     {
         url[i]=buf[j];
-        i++;j++;
+        i++;
+        j++;
     }
     url[i]='\0';
     //request get method
@@ -302,14 +313,15 @@ int accept_request(int client_fd)
         query_string=url;
         while ((*query_string!='?')&&(*query_string!='\0'))
             query_string++;
-        if (*query_string=='?') {
+        if (*query_string=='?')
+        {
             printf("read get args.");
             *query_string='\0';
             query_string++;
         }
     }
 
-    printf("--------------------\nSocket[%d] Header:\n",client_fd);
+
     while ((r>0)&&strcmp("\n", buf))
     {
         r=get_line(client_fd, buf, BUFFER_SIZE);
@@ -414,30 +426,26 @@ long send_file(int client_fd, SocketNode *tmp)
         send_headers(client_fd);
     memset(buf, 0,BUFFER_SIZE);
     r=fread(buf, sizeof(char), BUFFER_SIZE,fd);
-    while(r>0)
+    while(1)
     {
         t=send(client_fd,buf,r,0);
         if(t<0)
         {
-            //发送缓冲区满了
-            perror("! send_file/send_buffer_over error\n");
-            break;
+            if(errno==EAGAIN)
+            {
+                printf("! EAGAIN");
+                return 1;
+            }
+            else
+            {
+                printf("! Error:");
+                exit(1);
+            }
         }
-        else
-            tmp->slen+=t;
+        tmp->slen+=t;
         memset(buf, 0,BUFFER_SIZE);
         r=fread(buf, sizeof(char), BUFFER_SIZE,fd);
-    }
-
-    if((tmp->slen+1)<file_length)
-    {
-        printf("> Socket[%d] Send(Yet) : %s\n",client_fd,tmp->filepath);
-        return tmp->slen;
-    }
-    else
-    {
-        tmp->slen = 0;
-        printf("> Socket[%d] Send(Over) : %s\n", client_fd, tmp->filepath);
+        if(r==0)
         return 0;
     }
 }
@@ -458,7 +466,7 @@ void send_not_found(int client)
     strcat(buf, "</body></html>");
     buf[strlen(buf)]='\0';
     send(client, buf, strlen(buf), 0);
-    
+
     /*
     sprintf(buf, "HTTP/1.0 404 NOT FOUND\r\n");
     send(client, buf, strlen(buf), 0);
@@ -485,7 +493,7 @@ void start_epoll_loop(int httpd)
 {
     int epoll_fd,nfds;
     int client_fd;
-    long slen;
+    int rcode;
     int s;
     int i;
     int header_len=0;
@@ -509,13 +517,11 @@ void start_epoll_loop(int httpd)
         printf("! malloc error.\n");
     }
     memset(events,0,MAX_CLIENTS*sizeof(struct epoll_event));
-    for (; ;) {
+    for (; ;)
+    {
         nfds=epoll_wait(epoll_fd, events, MAX_CLIENTS, 3000);
-        if(nfds<1)
-            check_socket_list();
         for (i = 0; i < nfds; i++)
         {
-            printf("epoll.....................B\n");
             if((events[i].events&EPOLLERR) || (events[i].events & EPOLLHUP))
             {
                 printf("! epoll error.\n");
@@ -524,24 +530,32 @@ void start_epoll_loop(int httpd)
             }
             else if(events[i].events&EPOLLIN)
             {
-                printf("epoll.....................C\n");
+
                 if(events[i].data.fd==httpd)
                 {
-                    client_fd= accept(httpd, (struct sockaddr *)&client_addr,&socket_len);
-                    set_nonblocking(client_fd);
-                    ev.data.fd = client_fd;
-                    ev.events = EPOLLIN|EPOLLET;
-                    s=epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &ev);
-                    if (s == -1)
-                        epoll_close(epoll_fd,events[i].data.fd,&ev);
-                    SocketNode *tmp=new_socket_node();
-                    tmp->client_fd=client_fd;
-                    add_socket_node(tmp);
+                    //ET until get the errno=EAGAIN
+                    while((client_fd= accept(httpd, (struct sockaddr *)&client_addr,&socket_len))>0)
+                    {
+                        printf("> SOCKET[%d] accept\n",client_fd);
+                        set_nonblocking(client_fd);
+                        ev.data.fd = client_fd;
+                        ev.events = EPOLLIN|EPOLLET;
+                        s=epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &ev);
+                        if (s == -1)
+                            epoll_close(epoll_fd,events[i].data.fd,&ev);
+                        SocketNode *tmp=new_socket_node();
+                        tmp->client_fd=client_fd;
+                        add_socket_node(tmp);
+                    }
+                    if(errno==EAGAIN)
+                        printf("! EAGAIN try again\n");
+                    else
+                        perror("! Error:");
+                    continue;
                 }
                 else
                 {
                     header_len=accept_request(events[i].data.fd);
-                    printf("epoll.....................D\n");
                     if(header_len>0)
                     {
                         ev.data.fd = events[i].data.fd;
@@ -558,13 +572,13 @@ void start_epoll_loop(int httpd)
             }
             else if(events[i].events&EPOLLOUT)
             {
-                slen=send_response(events[i].data.fd);
-                printf("epoll.....................E\n");
-                if(0==slen)
+                rcode=send_response(events[i].data.fd);
+                if(0==rcode)
                     epoll_close(epoll_fd,events[i].data.fd,&ev);
 
             }
-            else{
+            else
+            {
                 printf("uncatched.");
                 epoll_close(epoll_fd,events[i].data.fd,&ev);
             }
@@ -682,3 +696,4 @@ void start_select_loop(int httpd)
     }
 }
 */
+
