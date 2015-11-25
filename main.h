@@ -71,6 +71,8 @@ typedef struct snode{
 long send_file(int client_fd, SocketNode *tmp);
 SocketNode *find_socket_node(int client_fd);
 void add_socket_node(SocketNode *client);
+void check_socket_list();
+
 void free_socket_node(int client_fd);
 
 #endif /* sockets_h */
@@ -89,22 +91,39 @@ SocketNode *new_socket_node(){
 SocketNode *find_socket_node(int client_fd)
 {
     SocketNode *tmp=SocketHeader;
-    while(1)
-        if(tmp!=NULL)
+    if(SocketHeader==NULL)
+    {
+        printf("! socketheader null\n");
+        exit(1);
+    }
+    while(tmp!=NULL)
+    {
             if(tmp->client_fd==client_fd)
                 return tmp;
             else
                 tmp=tmp->next;
-        else
-            return NULL;
+    }
+    return NULL;
 
 }
 
 void add_socket_node(SocketNode *client)
 {
+    // add the new node at Header behind and before others
+    // SocketNode *tmp=SocketHeader;
+    client->next=SocketHeader->next;
+    SocketHeader->next=client;
+}
+
+void check_socket_list()
+{
     SocketNode *tmp=SocketHeader;
-    client->next=tmp;
-    SocketHeader=client;
+    printf("> check_socket_list\n");
+    while(tmp)
+    {
+         printf("SOCKET[%d] live\n",tmp->client_fd);
+         tmp=tmp->next;
+    }
 }
 
 void free_socket_node(int client_fd)
@@ -300,6 +319,11 @@ int accept_request(int client_fd)
 
     sprintf(wwwpath, "%s/htdocs%s",rootpath,url);
     tmp= find_socket_node(client_fd);
+    if(tmp==NULL)
+    {
+        printf("! find_socket_node null\n");
+        exit(1);
+    }
     tmp->filepath=(char *)malloc((strlen(wwwpath)+11)*sizeof(char));
     strcpy(tmp->filepath,wwwpath);
     tmp->filepath[strlen(wwwpath)]='\0';
@@ -487,8 +511,11 @@ void start_epoll_loop(int httpd)
     memset(events,0,MAX_CLIENTS*sizeof(struct epoll_event));
     for (; ;) {
         nfds=epoll_wait(epoll_fd, events, MAX_CLIENTS, 3000);
+        if(nfds<1)
+            check_socket_list();
         for (i = 0; i < nfds; i++)
         {
+            printf("epoll.....................B\n");
             if((events[i].events&EPOLLERR) || (events[i].events & EPOLLHUP))
             {
                 printf("! epoll error.\n");
@@ -497,6 +524,7 @@ void start_epoll_loop(int httpd)
             }
             else if(events[i].events&EPOLLIN)
             {
+                printf("epoll.....................C\n");
                 if(events[i].data.fd==httpd)
                 {
                     client_fd= accept(httpd, (struct sockaddr *)&client_addr,&socket_len);
@@ -513,6 +541,7 @@ void start_epoll_loop(int httpd)
                 else
                 {
                     header_len=accept_request(events[i].data.fd);
+                    printf("epoll.....................D\n");
                     if(header_len>0)
                     {
                         ev.data.fd = events[i].data.fd;
@@ -530,6 +559,7 @@ void start_epoll_loop(int httpd)
             else if(events[i].events&EPOLLOUT)
             {
                 slen=send_response(events[i].data.fd);
+                printf("epoll.....................E\n");
                 if(0==slen)
                     epoll_close(epoll_fd,events[i].data.fd,&ev);
 
