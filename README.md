@@ -53,7 +53,7 @@ tools http://xxx.xx/tool.site.txt
 ### 添加模块jmp2string
 提供比较全面的编码解码。(目前在encode img =>base64有问题.)
 
-## 22015.11.23
+## 2015.11.23
 ### 修复了EPOLL的ET模式问题。
 
 ET模式，在于减少事件的频繁响应，只有当socket的状态change的时候，才会发出响应，所以listen_fd接受到accept请求，并不知道具体有几个并发socket请求，所以需要while(accept())直到EAGAIN的errno(读取也是类似).
