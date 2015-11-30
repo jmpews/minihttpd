@@ -340,15 +340,8 @@ int accept_request(int client_fd)
 		query_string=buf;
 		while (*query_string!='\0')
 		{
-			printf("Key:");
-			while(*query_string++!='=')
-				printf("%c",*query_string);
-			printf(" Value:");
-			while((*query_string++!='&')&&(*query_string!='\0'))
-				printf("%c",*query_string);
 
 		}
-		    query_string++;
 	    } 
 
     sprintf(wwwpath, "%s/htdocs%s",rootpath,url);
