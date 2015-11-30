@@ -295,7 +295,7 @@ int accept_request(int client_fd)
     if(strcasecmp(method,"GET")&&strcasecmp(method,"POST"))
     {
         printf("! request method not support.\n");
-        return -1;
+        exit(1);
     }
     while (is_space(buf[j])&&(j<BUFFER_SIZE))
         j++;
@@ -329,6 +329,27 @@ int accept_request(int client_fd)
         j+=r;
         printf("%s",buf);
     }
+
+    //request get method-POST
+    r=get_line(client_fd,buf,BUFFER_SIZE);
+    if(r>0)
+	    if (strcasecmp(method,"POST")==0)
+	    {
+
+		buf[r]='\0';
+		query_string=buf;
+		while (*query_string!='\0')
+		{
+			printf("Key:");
+			while(*query_string++!='=')
+				printf("%c",*query_string);
+			printf(" Value:");
+			while((*query_string++!='&')&&(*query_string!='\0'))
+				printf("%c",*query_string);
+
+		}
+		    query_string++;
+	    } 
 
     sprintf(wwwpath, "%s/htdocs%s",rootpath,url);
     tmp= find_socket_node(client_fd);
