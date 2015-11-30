@@ -48,6 +48,7 @@ struct clinfo *clients[MAX_CLIENTS];
 char rootpath[50];
 
 #define is_space(x) isspace((int)(x))
+#define TIP if(1){}else
 
 INT_32 read_data(INT_32 fd,char *buffer);
 void send_data(INT_32 fd,const char *buffer);
@@ -120,17 +121,17 @@ void add_socket_node(SocketNode *client)
 void check_socket_list()
 {
     SocketNode *tmp=SocketHeader;
-    //printf("> check_socket_list\n");
+    TIP printf("> check_socket_list\n");
     while(tmp)
     {
-        printf("SOCKET[%d] live\n",tmp->client_fd);
+        TIP printf("SOCKET[%d] live\n",tmp->client_fd);
         tmp=tmp->next;
     }
 }
 
 void free_socket_node(int client_fd)
 {
-    printf("> SOCKET[%d] free.\n",client_fd);
+    TIP printf("> SOCKET[%d] free.\n",client_fd);
     SocketNode *tmp=SocketHeader;
     SocketNode *k;
     //空链表
@@ -184,7 +185,7 @@ INT_32 set_nonblocking(INT_32 sockfd)
         return -1;
     }
 
-    printf("> Socket[%d] non-blocking.\n", sockfd);
+    TIP printf("> Socket[%d] non-blocking.\n", sockfd);
 
     return 0;
 }
@@ -276,13 +277,13 @@ int accept_request(int client_fd)
     SocketNode *tmp=NULL;
 
     r=get_line(client_fd, buf, BUFFER_SIZE);
-    printf("--------------------\nSocket[%d] Header:\n",client_fd);
-    printf("%s",buf);
     if(r==0)
     {
         //读取len 0数据,close
         return 0;
     }
+    printf(".................................\nSocket[%d] Header:\n",client_fd);
+    printf("%s",buf);
     //read request method
     while (!(is_space(buf[j]))&&i<BUFFER_SIZE)
     {
@@ -433,12 +434,12 @@ long send_file(int client_fd, SocketNode *tmp)
         {
             if(errno==EAGAIN)
             {
-                printf("! EAGAIN");
+                TIP printf("! EAGAIN");
                 return 1;
             }
             else
             {
-                printf("! Error:");
+                printf("! Send Error:");
                 exit(1);
             }
         }
@@ -536,7 +537,7 @@ void start_epoll_loop(int httpd)
                     //ET until get the errno=EAGAIN
                     while((client_fd= accept(httpd, (struct sockaddr *)&client_addr,&socket_len))>0)
                     {
-                        printf("> SOCKET[%d] accept\n",client_fd);
+                        printf("> SOCKET[%d] accept:%s\n",client_fd,inet_ntoa(client_addr.sin_addr));
                         set_nonblocking(client_fd);
                         ev.data.fd = client_fd;
                         ev.events = EPOLLIN|EPOLLET;
@@ -548,9 +549,10 @@ void start_epoll_loop(int httpd)
                         add_socket_node(tmp);
                     }
                     if(errno==EAGAIN)
-                        printf("! EAGAIN try again\n");
+                        TIP printf("! accept EAGAIN\n");
+                        //printf("! EAGAIN try again\n");
                     else
-                        perror("! Error:");
+                        perror("! Accept Error:");
                     continue;
                 }
                 else
