@@ -24,6 +24,8 @@
 //8. 对于错误处理要果断,如果该错误是自己assert不会出错,那就直接打印error code然后exit,不要强行继续处理.
 //9. 发送缓冲区的处理,8k左右字节,read了多少数据,就send多少数据,如果send返回缓冲区满了异常,那就重新将事件丢入,循环.
 //10.规范化状态码
+//11.header状态码处理
+//12.如何读一个长度很大并且未知的数据,先分配一个缓存char buf[1024],每次读到buf,并且记录每次读取的数量,然后realloc重新分配空间,直至终点
 #ifndef sockets_h
 #define sockets_h
 
@@ -39,15 +41,27 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <mach/i386/boolean.h>
 
+// 状态码标准化
 #define IO_DONE 0
+#define IO_CONTINUE 1
 #define IO_YET -1
 #define IO_ERROR -2
 
 
 #define ERROR_CODE -1
 #define SUCCESS_CODE 0
+
+#define GET 1
+#define POST 2
+
+// header处理状态
+#define REQ_NO -1
+#define REQ_INIT 1
+#define REQ_START 2
+#define REQ_HEAD_OVER 3
+#define REQ_BODY 4
+#define REQ_HOST 5
 
 
 #define INT_32 int
@@ -56,68 +70,88 @@
 #define BUFFER_SIZE 1024
 #define SERVER_STRING "Server: jmp2httpd 0.1.0\r\n"
 
-struct clinfo *clients[MAX_CLIENTS];
+#define is_space(x) isspace((INT_32)(x))
+#define TIP if(1){}else
+#define LOG(t) {printf("log[%d]..........\n",t);fflush(stdout);}
+#define FREEBUF(buf) if(buf){free(buf);buf=NULL;}
+
+#define LOGERRNO printf("EGAGAIN=[%d],CURERRNO=[%d]",EAGAIN,errno);fflush(stdout);
+
 char rootpath[50];
 
-#define is_space(x) isspace((int)(x))
-#define TIP if(1){}else
 
-INT_32 read_data(INT_32 fd, char *buffer);
+INT_32 handle_request(INT_32 client_fd);
 
-void send_data(INT_32 fd, const char *buffer);
+void send_headers(INT_32 client_fd);
 
-int accept_request(int client_fd);
+void send_not_found(INT_32 client);
 
-int get_line(int sock, char *buf, int size);
+INT_32 startup(INT_32 *port);
 
-void send_headers(int client_fd);
+INT_32 send_response(INT_32 client_fd);
 
-void send_not_found(int client);
+void epoll_close(INT_32 epoll_fd, INT_32 fd, struct epoll_event *ev);
 
-INT_32 startup(int *port);
+void start_epoll_loop(INT_32 httpd);
 
-long send_response(int client_fd);
+typedef struct readbuf {
+    char key[32];
+    char status;
+    char *value;
+    long content_length;
+    long current_length;
+} ReadBuf;
 
-void epoll_close(int epoll_fd, int fd, struct epoll_event *ev);
-
-void start_epoll_loop(int httpd);
+typedef struct sendbuf {
+    long content_length;
+    long current_length;
+} SendBuf;
+typedef struct header {
+    INT_32 method;
+    char *request_path;
+} ReqHeader;
 
 //connect链表
 typedef struct snode {
-    int client_fd;
-    char RS; //Read Status INIT:0 YET:-1 DONE:1
-    char SS; //Send Status
-    char *filepath;
-    char *cached;
-    long slen;
+
+    INT_32 client_fd;
+    ReqHeader Header;
+    //read状态
+    char RS;
+    ReadBuf RBuf;
+
+    //send状态
+    char SS;
+    SendBuf SBuf;
+
     struct snode *next;
 } SocketNode;
 
-long send_file(int client_fd, SocketNode *tmp);
+INT_32 get_line(INT_32 sock, SocketNode *tmp);
 
-SocketNode *find_socket_node(int client_fd);
+INT_32 send_file(INT_32 client_fd, SocketNode *tmp);
+
+SocketNode *find_socket_node(INT_32 client_fd);
 
 void add_socket_node(SocketNode *client);
 
+INT_32 read_line(INT_32 client_fd, SocketNode *tmp);
+
 void check_socket_list();
 
-void free_socket_node(int client_fd);
+void free_socket_node(INT_32 client_fd);
 
 #endif /* sockets_h */
 SocketNode *SocketHeader;
 
 SocketNode *new_socket_node() {
     SocketNode *tmp = (SocketNode *) malloc(sizeof(SocketNode));
-    tmp->client_fd = -1;
-    tmp->slen = -1;
-    tmp->cached=NULL;
-    tmp->next = NULL;
-    tmp->filepath = NULL;
+    memset(tmp, 0, sizeof(SocketNode));
     return tmp;
     // memset(tmp->filepath,0,sizeof(char)*MAX_PATH_LENGTH);
 }
 
-SocketNode *find_socket_node(int client_fd) {
+SocketNode *find_socket_node(INT_32 client_fd) {
     SocketNode *tmp = SocketHeader;
     if (SocketHeader == NULL) {
         printf("! socketheader null\n");
@@ -148,7 +182,7 @@ void check_socket_list() {
     }
 }
 
-void free_socket_node(int client_fd) {
+void free_socket_node(INT_32 client_fd) {
     TIP printf("> SOCKET[%d] free.\n", client_fd);
     SocketNode *tmp = SocketHeader;
     SocketNode *k;
@@ -170,7 +204,9 @@ void free_socket_node(int client_fd) {
         exit(1);
     }
     tmp->next = k->next;
-    free(k);
+    FREEBUF(k->RBuf.value);
+    FREEBUF(k->Header.request_path);
+    FREEBUF(k);
     close(client_fd);
 }
 
@@ -193,8 +229,8 @@ INT_32 set_nonblocking(INT_32 sockfd) {
     return 0;
 }
 
-INT_32 startup(int *port) {
-    int httpd = 0;
+INT_32 startup(INT_32 *port) {
+    INT_32 httpd = 0;
     struct sockaddr_in server_addr;
     if ((httpd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         printf("! httpd start error.");
@@ -203,7 +239,7 @@ INT_32 startup(int *port) {
 
     INT_32 opt = SO_REUSEADDR;
     if (setsockopt(httpd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1) {
-        printf("! httpd reuseaddr error.");
+        perror("! Reuse error.");
         exit(1);
     }
 
@@ -221,136 +257,226 @@ INT_32 startup(int *port) {
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
     if (bind(httpd, (struct sockaddr *) &server_addr, sizeof(struct sockaddr_in)) == -1) {
-        printf("! httpd bind error.\n");
-        return -1;
+        perror("! Bind error:\n");
+        exit(1);
     }
 
     if (listen(httpd, BACKLOG) == -1) {
-        printf("! httpd listen error.\n");
-        return -1;
+        printf("! Listen error.\n");
+        exit(1);
     }
+    memset(rootpath, 0, sizeof(rootpath));
     getcwd(rootpath, sizeof(rootpath));
     return httpd;
 }
 
-int get_line(int sock, char *buf, int size) {
-    int i = 0;
+INT_32 get_line(INT_32 sock, SocketNode *tmp) {
+    INT_32 i, j, n;
     char c = '\0';
-    int r;
-    /* 转换/r/n 到 /n */
-    while ((i < size - 1) && (c != '\n')) {
-        r = recv(sock, &c, 1, 0);
-        if (r > 0) {
-            if (c == '\r') {
-                /* 从缓冲区copy数据，并不删除数据，如果符合再次读取数据 */
-                r = recv(sock, &c, 1, MSG_PEEK);
-                if (r > 0 && c == '\n')
-                    recv(sock, &c, 1, 0);
-                else
-                    c = '\n';
+    INT_32 r;
+    INT_32 buf_size = 1024;
+    char buf[buf_size];
+    char *value;
+    if (tmp->RS == IO_YET) {
+        // 恢复上一次状态
+        tmp->RS == IO_DONE;
+        value = tmp->RBuf.value;
+        n = tmp->RBuf.current_length;
+    }
+    else {
+        // free上一次
+        FREEBUF(tmp->RBuf.value);
+        n = 0;
+    }
+    while (1) {
+        i = 0;
+        /* 转换/r/n 到 /n */
+        while ((i < buf_size - 1) && (c != '\n')) {
+            r = recv(sock, &c, 1, 0);
+            if (r > 0) {
+                if (c == '\r') {
+                    /* 从缓冲区copy数据，并不删除数据，如果符合再次读取数据 */
+                    r = recv(sock, &c, 1, MSG_PEEK);
+                    if (r > 0 && c == '\n')
+                        recv(sock, &c, 1, 0);
+                    else
+                        c = '\n';
+                    buf[i++] = c;
+                    break;
+                }
+                buf[i] = c;
+                i++;
             }
-            buf[i] = c;
-            i++;
+            else {
+                if (errno == EAGAIN)
+                    break;
+            }
+        }
+        //如果读取0字节,并且EAGAIN,表明读取完毕,提前判断避免malloc
+        if (n == 0 && r < 0 && errno == EAGAIN) {
+            //多余
+            FREEBUF(tmp->RBuf.value);
+            return IO_DONE;
+        }
+        // 分配一块内存,如果这一行过大,要支持realloc
+        if (n)
+            value = (char *) realloc(value, (n + i + 1) * sizeof(char));
+        else
+            value = (char *) malloc((i + 1) * sizeof(char));
+        //复制读取数据
+        memcpy(value + n, buf, i * sizeof(char));
+        n += i;
+        value[n] = '\0';
+        tmp->RBuf.value = value;
+        //EAGAIN
+        if (r < 0) {
+            if (errno == EAGAIN) {
+                tmp->RS = IO_YET;
+                return IO_YET;
+            }
+            else {
+                perror("! get_line error");
+                exit(1);
+            }
+        }
+        else if (r >= 0 && c == '\n') {
+            return n;
+        }
+        else{
+            //表明这一行数据太多,继续读取,realloc.
+        }
+    }
+}
+
+INT_32 handle_header(INT_32 client_fd, SocketNode *tmp) {
+    INT_32 i = 0, r = 0;
+    INT_32 key_size = 32;
+
+    char *buf;
+    r = get_line(client_fd, tmp);
+    buf = tmp->RBuf.value;
+    //故意=0
+    while (r > 0) {
+        //打印请求头
+        printf("%s", buf);
+        i = 0;
+        while (i < r && i < key_size)
+            if (buf[i] == ':')
+                break;
+            else
+                i++;
+        i += 1;
+        //tmp->RBuf.value = (char *) malloc(sizeof(char) * (r - i));
+        //memcpy(tmp->RBuf.value, buf + i, r - i);
+        if (!strcmp(tmp->RBuf.value, "\n")) {
+            tmp->RBuf.status = REQ_HEAD_OVER;
+            printf("-------header end------\n");
+        }
+        else if (tmp->RBuf.status == REQ_HEAD_OVER) {
+            //body的判断方式
+            tmp->RBuf.status = REQ_BODY;
+            printf("-------body end------\n");
+            FREEBUF(tmp->RBuf.value);
+            return IO_DONE;
+        }
+        //释放,多余
+        //free(tmp->RBuf.value);
+        r = get_line(client_fd, tmp);
+        buf = tmp->RBuf.value;
+    }
+    if (r == IO_DONE) {
+        return IO_DONE;
+    }
+    else
+        return IO_YET;
+}
+
+INT_32 handle_request(INT_32 client_fd) {
+    SocketNode *tmp;
+    INT_32 r;
+    INT_32 i, j;
+    char method[32];
+    char url[256];
+    char request_path[256];
+    char *buf;
+    memset(method, 0, 256 * sizeof(char));
+    memset(url, 0, 256 * sizeof(char));
+    memset(request_path, 0, 256 * sizeof(char));
+
+    tmp = find_socket_node(client_fd);
+    if (tmp->RS != IO_YET) {
+        //start read
+        r = get_line(client_fd, tmp);
+        buf = tmp->RBuf.value;
+        if (r == IO_YET) {
+            return IO_YET;
         }
         else {
-            if (errno == EAGAIN)
-                return IO_YET;
-            c = '\n';
+            tmp->RBuf.status = -REQ_START;
+            printf("-------header start------\n");
+            printf("%s", buf);
+
         }
+        //设置请求方法
+        i = j = 0;
+        while (!(is_space(buf[j])) && i < BUFFER_SIZE) {
+            method[i] = buf[j];
+            i++;
+            j++;
+        }
+        method[i] = '\0';
+        if (strcasecmp(method, "GET") && strcasecmp(method, "POST")) {
+            printf("! request method not support.\n");
+            exit(1);
+        }
+        if (!strcasecmp(method, "GET"))
+            tmp->Header.method = GET;
+        else if (!strcasecmp(method, "POST"))
+            tmp->Header.method = POST;
+
+        while (is_space(buf[j]) && (j < BUFFER_SIZE))
+            j++;
+
+        //设置请求路径
+        i = 0;
+        while (!is_space(buf[j]) && (j < BUFFER_SIZE)) {
+            url[i] = buf[j];
+            i++;
+            j++;
+        }
+        sprintf(request_path, "%s/htdocs%s", rootpath, url);
+        tmp->Header.request_path = (char *) malloc((strlen(request_path) + 11) * sizeof(char));
+        strcpy(tmp->Header.request_path, request_path);
+        tmp->Header.request_path[strlen(request_path)] = '\0';
     }
-    buf[i] = '\0';
-    return i;
-}
 
-int accept_request(int client_fd) {
-    char buf[BUFFER_SIZE];
-    char method[BUFFER_SIZE];
-    char url[255];
-    char wwwpath[256];
-    int i, j, r = 0;
-    char *kw= NULL;
-    SocketNode *tmp = NULL;
-
-    if ((r = get_line(client_fd, buf, BUFFER_SIZE)) == IO_YET)
+    // 处理后续header
+    r = handle_header(client_fd, tmp);
+    if (r == IO_YET)
         return IO_YET;
-    printf(".................................\nSocket[%d] Header:\n", client_fd);
-    printf("%s", buf);
-    //read request method
-    i = j = 0;
-    while (!(is_space(buf[j])) && i < BUFFER_SIZE) {
-        method[i] = buf[j];
-        i++;
-        j++;
+    else {
+        return IO_DONE;
     }
-    method[i] = '\0';
-    if (strcasecmp(method, "GET") && strcasecmp(method, "POST")) {
-        printf("! request method not support.\n");
-        exit(1);
-    }
-    while (is_space(buf[j]) && (j < BUFFER_SIZE))
-        j++;
-
-    i = 0;
-    while (!is_space(buf[j]) && (j < BUFFER_SIZE)) {
-        url[i] = buf[j];
-        i++;
-        j++;
-    }
-    url[i] = '\0';
-    while ((r > 0) && strcmp("\n", buf)) {
-        r = get_line(client_fd, buf, BUFFER_SIZE);
-        j += r;
-        printf("%s", buf);
-    }
-    //request get method-GET
-    if (strcasecmp(method, "GET") == 0) {
-        TIP printf("> method GET");
-    }
-    //request get method-POST
-    r = get_line(client_fd, buf, BUFFER_SIZE);
-    if (r > 0) if (strcasecmp(method, "POST") == 0) {
-        buf[r] = '\0';
-        kw = buf;
-        i=j=0;
-        while (*kw!='\0') {
-            printf("key:");
-            while(*kw++!='=')
-                printf("%c",*kw);
-            printf("value:");
-            while((*kw++!='&')||(*kw++!='\0'))
-                printf("%c",*kw);
-        }
-    }
-
-    sprintf(wwwpath, "%s/htdocs%s", rootpath, url);
-    tmp = find_socket_node(client_fd);
-    if (tmp == NULL) {
-        printf("! find_socket_node null\n");
-        exit(1);
-    }
-    tmp->filepath = (char *) malloc((strlen(wwwpath) + 11) * sizeof(char));
-    strcpy(tmp->filepath, wwwpath);
-    tmp->filepath[strlen(wwwpath)] = '\0';
-    return j;
 }
 
-long send_response(int client_fd) {
+INT_32 send_response(INT_32 client_fd) {
     struct stat st;
     SocketNode *tmp;
     char *path;
-    long r;
+    INT_32 r;
     tmp = find_socket_node(client_fd);
 
     if (tmp == NULL) {
         printf("! find_socket_node error.");
         exit(1);
     }
-    if (tmp->slen > 0) {
+    if (tmp->SS == IO_YET) {
+        // 没有发送完毕,无需判断,直接发送文件
         r = send_file(client_fd, tmp);
         return r;
     }
-    else if (tmp->filepath != NULL) {
-        path = tmp->filepath;
+    else if (tmp->Header.request_path != NULL) {
+        path = tmp->Header.request_path;
         if (path[strlen(path) - 1] == '/')
             strcat(path, "index.html");
         path[strlen(path)] = '\0';
@@ -360,11 +486,11 @@ long send_response(int client_fd) {
         }
     }
     send_not_found(client_fd);
-    return 0;
+    return IO_DONE;
 }
 
 
-void send_headers(int client_fd) {
+void send_headers(INT_32 client_fd) {
     char buf[BUFFER_SIZE];
     memset(buf, 0, BUFFER_SIZE);
     strcat(buf, "HTTP/1.0 200 OK\r\n");
@@ -386,7 +512,7 @@ void send_headers(int client_fd) {
     */
 }
 
-long send_file(int client_fd, SocketNode *tmp) {
+INT_32 send_file(INT_32 client_fd, SocketNode *tmp) {
     //if((st.st_mode&S_IFMT)==S_IFDIR)
     FILE *fd;
     long file_length = 0;
@@ -394,7 +520,7 @@ long send_file(int client_fd, SocketNode *tmp) {
     size_t r = 0;
     long t;
 
-    fd = fopen(tmp->filepath, "r");
+    fd = fopen(tmp->Header.request_path, "r");
     if (fd == NULL) {
         perror("! send_file/fopen error\n");
         exit(1);
@@ -404,8 +530,8 @@ long send_file(int client_fd, SocketNode *tmp) {
     rewind(fd);
 
     //设置文件当前指针,为上次没有读完的
-    if (tmp->slen > 0)
-        fseek(fd, tmp->slen, SEEK_SET);
+    if (tmp->SS == IO_YET)
+        fseek(fd, tmp->SBuf.current_length, SEEK_SET);
     else
         send_headers(client_fd);
     memset(buf, 0, BUFFER_SIZE);
@@ -415,23 +541,23 @@ long send_file(int client_fd, SocketNode *tmp) {
         if (t < 0) {
             if (errno == EAGAIN) {
                 TIP printf("! EAGAIN");
-                return 1;
+                return IO_YET;
             }
             else {
                 printf("! Send Error:");
                 exit(1);
             }
         }
-        tmp->slen += t;
+        tmp->SBuf.current_length += t;
         memset(buf, 0, BUFFER_SIZE);
         r = fread(buf, sizeof(char), BUFFER_SIZE, fd);
         if (r == 0)
-            return 0;
+            return IO_DONE;
     }
 }
 
 
-void send_not_found(int client) {
+void send_not_found(INT_32 client) {
     char buf[BUFFER_SIZE];
     memset(buf, 0, BUFFER_SIZE);
     strcat(buf, "HTTP/1.0 404 NOT FOUND\r\n");
@@ -468,16 +594,16 @@ void send_not_found(int client) {
     */
 }
 
-void start_epoll_loop(int httpd) {
-    int epoll_fd, nfds;
-    int client_fd;
-    int rcode;
-    int s;
-    int i;
-    int header_len = 0;
+void start_epoll_loop(INT_32 httpd) {
+    INT_32 epoll_fd, nfds;
+    INT_32 client_fd;
+    INT_32 s;
+    INT_32 i;
+    INT_32 r;
     struct epoll_event ev;
     struct epoll_event *events;
     struct sockaddr_in client_addr;
+    char ipaddr[32];
     socklen_t socket_len = sizeof(struct sockaddr_in);
 
     epoll_fd = epoll_create(MAX_CLIENTS);
@@ -506,7 +632,8 @@ void start_epoll_loop(int httpd) {
                 if (events[i].data.fd == httpd) {
                     //ET until get the errno=EAGAIN
                     while ((client_fd = accept(httpd, (struct sockaddr *) &client_addr, &socket_len)) > 0) {
-                        printf("> SOCKET[%d] accept:%s\n", client_fd, inet_ntoa(client_addr.sin_addr));
+                        inet_ntop(AF_INET, &(client_addr.sin_addr), ipaddr, 32 * sizeof(char));
+                        printf("> SOCKET[%d] Accept : %s\n", client_fd, ipaddr);
                         set_nonblocking(client_fd);
                         ev.data.fd = client_fd;
                         ev.events = EPOLLIN | EPOLLET;
@@ -524,13 +651,15 @@ void start_epoll_loop(int httpd) {
                     continue;
                 }
                 else {
-                    header_len = accept_request(events[i].data.fd);
-                    if (header_len > 0) {
+                    r = handle_request(events[i].data.fd);
+                    if (r == IO_DONE) {
                         ev.data.fd = events[i].data.fd;
                         ev.events = EPOLLOUT | EPOLLET;
                         s = epoll_ctl(epoll_fd, EPOLL_CTL_MOD, events[i].data.fd, &ev);
                         if (s == -1)
                             epoll_close(epoll_fd, events[i].data.fd, &ev);
+                    }
+                    else if (r == IO_YET) {
                     }
                     else {
                         epoll_close(epoll_fd, events[i].data.fd, &ev);
@@ -538,8 +667,8 @@ void start_epoll_loop(int httpd) {
                 }
             }
             else if (events[i].events & EPOLLOUT) {
-                rcode = send_response(events[i].data.fd);
-                if (0 == rcode)
+                r = send_response(events[i].data.fd);
+                if (IO_DONE == r)
                     epoll_close(epoll_fd, events[i].data.fd, &ev);
 
             }
@@ -551,7 +680,7 @@ void start_epoll_loop(int httpd) {
     }
 }
 
-void epoll_close(int epoll_fd, int fd, struct epoll_event *ev) {
+void epoll_close(INT_32 epoll_fd, INT_32 fd, struct epoll_event *ev) {
     if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, ev) == -1)
         printf("! close epoll_ctl error.\n");
     free_socket_node(fd);
@@ -559,7 +688,7 @@ void epoll_close(int epoll_fd, int fd, struct epoll_event *ev) {
 }
 
 /*
-void start_select_loop(int httpd)
+void start_select_loop(INT_32 httpd)
 {
     INT_32 connect_fd;
     INT_32 retcode;

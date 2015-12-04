@@ -7,7 +7,7 @@
 //
 
 #include <sys/select.h>
-#include "main.h"
+#include "main.new.h"
 
 INT_32 main(INT_32 argc, const char * argv[]) {
 

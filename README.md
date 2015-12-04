@@ -59,3 +59,15 @@ tools http://xxx.xx/tool.site.txt
 ET模式，在于减少事件的频繁响应，只有当socket的状态change的时候，才会发出响应，所以listen_fd接受到accept请求，并不知道具体有几个并发socket请求，所以需要while(accept())直到EAGAIN的errno(读取也是类似).
 
 PS：手动很难模拟并发，一个很模仿并发的情况就是在一个html文件下面，引入多个本地js，这些js在加载的时候是并发去请求的。
+
+##2015.12.04
+### 规格化返回状态
+### 按照非阻塞的方式处理request请求
+记录header的处理状态，遇到EAGAIN保存状态，对于包含大量数据的请求头做了预处理。
+
+### 宏定义的合理使用
+宏这真是个好东西。
+
+用宏打印log`#define LOG(t) {printf("log[%d]..........\n",t);fflush(stdout);}`
+
+用宏处理`#define FREEBUF(buf) if(buf){free(buf);buf=NULL;}`
