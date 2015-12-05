@@ -26,6 +26,7 @@
 //10.规范化状态码
 //11.header状态码处理
 //12.如何读一个长度很大并且未知的数据,先分配一个缓存char buf[1024],每次读到buf,并且记录每次读取的数量,然后realloc重新分配空间,直至终点
+//13.读取body一行没有\n最后的处理
 #ifndef sockets_h
 #define sockets_h
 
