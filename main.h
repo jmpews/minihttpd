@@ -74,6 +74,7 @@
 #define TIP if(1){}else
 #define LOG(t) {printf("log[%d]..........\n",t);fflush(stdout);}
 #define FREEBUF(buf) if(buf){free(buf);buf=NULL;}
+#define PRINT_LINE_TITLE(str) printf("\n----------------%s----------------\n", str);
 
 #define LOGERRNO printf("EGAGAIN=[%d],CURERRNO=[%d]",EAGAIN,errno);fflush(stdout);
 
@@ -293,6 +294,8 @@ INT_32 get_line(INT_32 sock, SocketNode *tmp) {
         /* 转换/r/n 到 /n */
         while ((i < buf_size - 1) && (c != '\n')) {
             r = recv(sock, &c, 1, 0);
+            // printf("%c", c);
+            // fflush(stdout);
             if (r > 0) {
                 if (c == '\r') {
                     /* 从缓冲区copy数据，并不删除数据，如果符合再次读取数据 */
@@ -301,6 +304,7 @@ INT_32 get_line(INT_32 sock, SocketNode *tmp) {
                         recv(sock, &c, 1, 0);
                     else
                         c = '\n';
+
                     buf[i++] = c;
                     break;
                 }
@@ -312,8 +316,9 @@ INT_32 get_line(INT_32 sock, SocketNode *tmp) {
                     break;
             }
         }
+        // buf[i]='\0';
         //如果读取0字节,并且EAGAIN,表明读取完毕,提前判断避免malloc
-        if (n == 0 && r < 0 && errno == EAGAIN) {
+        if (i == 0 && r < 0 && errno == EAGAIN) {
             //多余
             FREEBUF(tmp->RBuf.value);
             return IO_DONE;
@@ -331,6 +336,9 @@ INT_32 get_line(INT_32 sock, SocketNode *tmp) {
         //EAGAIN
         if (r < 0) {
             if (errno == EAGAIN) {
+                // 这里特殊情况处理下，当读到HEAD_OVER
+                if (tmp->RBuf.status==REQ_HEAD_OVER)
+                    return n;
                 tmp->RS = IO_YET;
                 return IO_YET;
             }
@@ -370,13 +378,17 @@ INT_32 handle_header(INT_32 client_fd, SocketNode *tmp) {
         //memcpy(tmp->RBuf.value, buf + i, r - i);
         if (!strcmp(tmp->RBuf.value, "\n")) {
             tmp->RBuf.status = REQ_HEAD_OVER;
-            printf("-------header end------\n");
+            PRINT_LINE_TITLE("header-end");
+            // printf("-------header end------\n");
+            // r = get_line(client_fd, tmp);
+            // buf = tmp->RBuf.value;
+            // printf("%s:%d", buf,r);
         }
         else if (tmp->RBuf.status == REQ_HEAD_OVER) {
             //body的判断方式
             tmp->RBuf.status = REQ_BODY;
-            printf("-------body end------\n");
-            FREEBUF(tmp->RBuf.value);
+            PRINT_LINE_TITLE("body-end");
+            // printf("\n-------body end------\n");
             return IO_DONE;
         }
         //释放,多余
@@ -413,7 +425,8 @@ INT_32 handle_request(INT_32 client_fd) {
         }
         else {
             tmp->RBuf.status = -REQ_START;
-            printf("-------header start------\n");
+            PRINT_LINE_TITLE("header-start");
+            // printf("-------header start------\n");
             printf("%s", buf);
 
         }
