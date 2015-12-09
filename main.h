@@ -27,8 +27,6 @@
 //11.header状态码处理
 //12.如何读一个长度很大并且未知的数据,先分配一个缓存char buf[1024],每次读到buf,并且记录每次读取的数量,然后realloc重新分配空间,直至终点
 //13.读取body一行没有\n最后的处理
-#ifndef sockets_h
-#define sockets_h
 
 #include <stdio.h>
 #include <unistd.h>
@@ -73,7 +71,7 @@
 
 #define is_space(x) isspace((INT_32)(x))
 #define TIP if(1){}else
-#define LOG(t) {printf("log[%d]..........\n",t);fflush(stdout);}
+#define LOG(str) {printf(".........[%s]..........\n",str);fflush(stdout);}
 #define FREEBUF(buf) if(buf){free(buf);buf=NULL;}
 #define PRINT_LINE_TITLE(str) printf("\n----------------%s----------------\n", str);
 
@@ -86,20 +84,22 @@ INT_32 handle_request(INT_32 client_fd);
 
 void send_headers(INT_32 client_fd);
 
+INT_32 send_file(INT_32 client_fd,char *path,long *len);
 void send_not_found(INT_32 client);
 
 INT_32 startup(INT_32 *port);
 
 INT_32 send_response(INT_32 client_fd);
 
+void send_data(INT_32 client,char *data);
 void epoll_close(INT_32 epoll_fd, INT_32 fd, struct epoll_event *ev);
 
 void start_epoll_loop(INT_32 httpd);
 
 typedef struct readbuf {
-    char key[32];
     char status;
     char *value;
+    char * headerbuf;
     long content_length;
     long current_length;
 } ReadBuf;
@@ -110,7 +110,7 @@ typedef struct sendbuf {
 } SendBuf;
 typedef struct header {
     INT_32 method;
-    char *request_path;
+    char request_path[64];
 } ReqHeader;
 
 //connect链表
@@ -129,33 +129,33 @@ typedef struct snode {
     struct snode *next;
 } SocketNode;
 
-INT_32 get_line(INT_32 sock, SocketNode *tmp);
 
-INT_32 send_file(INT_32 client_fd, SocketNode *tmp);
 
-SocketNode *find_socket_node(INT_32 client_fd);
 
-void add_socket_node(SocketNode *client);
+SocketNode *find_socket_node(SocketNode *Header,INT_32 client_fd);
 
-INT_32 read_line(INT_32 client_fd, SocketNode *tmp);
+void add_socket_node(SocketNode *Header,SocketNode *client);
 
-void check_socket_list();
 
-void free_socket_node(INT_32 client_fd);
+void check_socket_list(SocketNode *Header);
 
-#endif /* sockets_h */
+void free_socket_node(SocketNode *Header,INT_32 client_fd);
+
+
+
+
 SocketNode *SocketHeader;
-
 SocketNode *new_socket_node() {
     SocketNode *tmp = (SocketNode *) malloc(sizeof(SocketNode));
     memset(tmp, 0, sizeof(SocketNode));
+    tmp->RBuf.value=NULL;
+    tmp->RBuf.headerbuf=NULL;
     return tmp;
-    // memset(tmp->filepath,0,sizeof(char)*MAX_PATH_LENGTH);
 }
 
-SocketNode *find_socket_node(INT_32 client_fd) {
-    SocketNode *tmp = SocketHeader;
-    if (SocketHeader == NULL) {
+SocketNode *find_socket_node(SocketNode *Header,INT_32 client_fd) {
+    SocketNode *tmp = Header;
+    if (Header == NULL) {
         printf("! socketheader null\n");
         exit(1);
     }
@@ -169,14 +169,14 @@ SocketNode *find_socket_node(INT_32 client_fd) {
 
 }
 
-void add_socket_node(SocketNode *client) {
+void add_socket_node(SocketNode *Header,SocketNode *client) {
     // 添加节点到HeaderNode与其他Node之间
-    client->next = SocketHeader->next;
-    SocketHeader->next = client;
+    client->next = Header->next;
+    Header->next = client;
 }
 
-void check_socket_list() {
-    SocketNode *tmp = SocketHeader;
+void check_socket_list(SocketNode *Header) {
+    SocketNode *tmp = Header;
     TIP printf("> check_socket_list\n");
     while (tmp) {
         TIP printf("SOCKET[%d] live\n", tmp->client_fd);
@@ -184,9 +184,9 @@ void check_socket_list() {
     }
 }
 
-void free_socket_node(INT_32 client_fd) {
+void free_socket_node(SocketNode *Header,INT_32 client_fd) {
     TIP printf("> SOCKET[%d] free.\n", client_fd);
-    SocketNode *tmp = SocketHeader;
+    SocketNode *tmp = Header;
     SocketNode *k;
     //空链表
     if (tmp == NULL) {
@@ -207,10 +207,13 @@ void free_socket_node(INT_32 client_fd) {
     }
     tmp->next = k->next;
     FREEBUF(k->RBuf.value);
-    FREEBUF(k->Header.request_path);
+    FREEBUF(k->RBuf.headerbuf);
     FREEBUF(k);
     close(client_fd);
 }
+
+
+//*****************************************  服务器初始化模块  ************************************
 
 INT_32 set_nonblocking(INT_32 sockfd) {
     INT_32 opts;
@@ -230,6 +233,7 @@ INT_32 set_nonblocking(INT_32 sockfd) {
 
     return 0;
 }
+
 
 INT_32 startup(INT_32 *port) {
     INT_32 httpd = 0;
@@ -251,7 +255,7 @@ INT_32 startup(INT_32 *port) {
     //new socket_info
     SocketNode *tmp = new_socket_node();
     tmp->client_fd = httpd;
-    //add_socket_node(tmp);
+    //add_socket_node(SocketHeader,tmp);
     SocketHeader = tmp;
 
     server_addr.sin_family = AF_INET;
@@ -272,112 +276,114 @@ INT_32 startup(INT_32 *port) {
     return httpd;
 }
 
-INT_32 get_line(INT_32 sock, SocketNode *tmp) {
-    INT_32 i, j, n;
-    char c = '\0';
-    INT_32 r;
-    INT_32 buf_size = 1024;
-    char buf[buf_size];
-    char *value;
-    if (tmp->RS == IO_YET) {
-        // 恢复上一次状态
-        tmp->RS == IO_DONE;
-        value = tmp->RBuf.value;
-        n = tmp->RBuf.current_length;
-    }
-    else {
-        // free上一次
-        FREEBUF(tmp->RBuf.value);
-        n = 0;
-    }
-    while (1) {
-        i = 0;
-        /* 转换/r/n 到 /n */
-        while ((i < buf_size - 1) && (c != '\n')) {
-            r = recv(sock, &c, 1, 0);
-            // printf("%c", c);
-            // fflush(stdout);
-            if (r > 0) {
-                if (c == '\r') {
-                    /* 从缓冲区copy数据，并不删除数据，如果符合再次读取数据 */
-                    r = recv(sock, &c, 1, MSG_PEEK);
-                    if (r > 0 && c == '\n')
-                        recv(sock, &c, 1, 0);
-                    else
-                        c = '\n';
 
-                    buf[i++] = c;
-                    break;
-                }
-                buf[i] = c;
-                i++;
+//*****************************************  Request模块  ************************************
+
+
+INT_32 get_line1(INT_32 sock, char *buf,int BUF_SIZE) {
+    INT_32 i;
+    char c='\0' ;
+    INT_32 r;
+    i = 0;
+    /* 转换/r/n 到 /n */
+    while ((i < BUF_SIZE - 1) && (c != '\n')) {
+        r = recv(sock, &c, 1, 0);
+        if (r > 0) {
+            if (c == '\r') {
+                /* 从缓冲区copy数据，并不删除数据，如果符合再次读取数据 */
+                r = recv(sock, &c, 1, MSG_PEEK);
+                if (r > 0 && c == '\n')
+                    recv(sock, &c, 1, 0);
+                else
+                    c = '\n';
             }
-            else {
-                if (errno == EAGAIN)
-                    break;
-            }
+            buf[i] = c;
+            i++;
         }
-        // buf[i]='\0';
-        //如果读取0字节,并且EAGAIN,表明读取完毕,提前判断避免malloc
-        if (i == 0 && r < 0 && errno == EAGAIN) {
-            //多余
-            FREEBUF(tmp->RBuf.value);
-            return IO_DONE;
-        }
-        // 分配一块内存,如果这一行过大,要支持realloc
-        if (n)
-            value = (char *) realloc(value, (n + i + 1) * sizeof(char));
-        else
-            value = (char *) malloc((i + 1) * sizeof(char));
-        //复制读取数据
-        memcpy(value + n, buf, i * sizeof(char));
-        n += i;
-        value[n] = '\0';
-        tmp->RBuf.value = value;
-        //EAGAIN
-        if (r < 0) {
-            if (errno == EAGAIN) {
-                // 这里特殊情况处理下，当读到HEAD_OVER
-                if (tmp->RBuf.status==REQ_HEAD_OVER)
-                    return n;
-                tmp->RS = IO_YET;
-                return IO_YET;
-            }
-            else {
-                perror("! get_line error");
+        else {
+            if (errno == EAGAIN)
+                break;
+            else
+            {
+                perror("recv error:");
                 exit(1);
             }
         }
-        else if (r >= 0 && c == '\n') {
-            return n;
+    }
+    buf[i]='\0';
+    // 读取到空数据，表明读取完毕.
+    if (i == 0 && r < 0 && errno == EAGAIN) {
+        return 0;
+    }
+
+    if (r < 0) {
+        if (errno == EAGAIN) {
+            // 这里特殊情况处理下，当读到HEAD_OVER,表明读到body.
+            //if (tmp->RBuf.status==REQ_HEAD_OVER)
+            //   return i;
+            return -1;
         }
-        else{
-            //表明这一行数据太多,继续读取,realloc.
+        else {
+            perror("! get_line error");
+            exit(1);
         }
     }
+    return i;
 }
 
 INT_32 handle_header(INT_32 client_fd, SocketNode *tmp) {
+    //每次都要malloc分配空间,应该在发生error时保存已经读取的.
     INT_32 i = 0, r = 0;
     INT_32 key_size = 32;
+    int buf_size=1024;
+    int t=0;
+    char *big_buf=NULL;
+    char buf[1024];
+    char *buffer=NULL;
 
-    char *buf;
-    r = get_line(client_fd, tmp);
-    buf = tmp->RBuf.value;
+    r = get_line1(client_fd, buf,buf_size);
+    //下面是针对当某一行数据过大的处理,比如文件。
+    if(r==(buf_size-1))
+    {
+
+        FREEBUF(big_buf);
+        big_buf=(char *)malloc(sizeof(char)*buf_size);
+        memcpy(big_buf,buf,buf_size);
+        while((t=get_line1(client_fd,buf,buf_size))==(buf_size-1))
+        {
+            big_buf=(char *)realloc(big_buf,sizeof(char)*(t+buf_size));
+            memcpy(big_buf,buf,buf_size);
+            r+=t;
+        }
+        memcpy(big_buf,buf,buf_size);
+        r+=t;
+    }
+
     //故意=0
     while (r > 0) {
         //打印请求头
-        printf("%s", buf);
+        if(big_buf==NULL)
+            buffer=buf;
+        else
+            buffer=big_buf;
+        printf("%s", buffer);
+        if(tmp->RBuf.content_length==0)
+            tmp->RBuf.headerbuf=(char *)malloc(r* sizeof(char));
+        else
+            tmp->RBuf.headerbuf=(char *)realloc(tmp->RBuf.headerbuf,tmp->RBuf.content_length+r);
+        memcpy(tmp->RBuf.headerbuf+tmp->RBuf.content_length,buffer,r);
+        tmp->RBuf.content_length+=r;
+
         i = 0;
         while (i < r && i < key_size)
-            if (buf[i] == ':')
+            if (buffer[i] == ':')
                 break;
             else
                 i++;
         i += 1;
         //tmp->RBuf.value = (char *) malloc(sizeof(char) * (r - i));
         //memcpy(tmp->RBuf.value, buf + i, r - i);
-        if (!strcmp(tmp->RBuf.value, "\n")) {
+        if (!strcmp(buffer, "\n")) {
             tmp->RBuf.status = REQ_HEAD_OVER;
             PRINT_LINE_TITLE("header-end");
             // printf("-------header end------\n");
@@ -389,19 +395,35 @@ INT_32 handle_header(INT_32 client_fd, SocketNode *tmp) {
             //body的判断方式
             tmp->RBuf.status = REQ_BODY;
             PRINT_LINE_TITLE("body-end");
-            // printf("\n-------body end------\n");
+            FREEBUF(big_buf);
             return IO_DONE;
         }
         //释放,多余
-        //free(tmp->RBuf.value);
-        r = get_line(client_fd, tmp);
-        buf = tmp->RBuf.value;
+        r = get_line1(client_fd, buf,buf_size);
+        //下面是针对当某一行数据过大的处理,比如文件。
+        if(r==(buf_size-1))
+        {
+
+            FREEBUF(big_buf);
+            big_buf=(char *)malloc(sizeof(char)*buf_size);
+            memcpy(big_buf,buf,buf_size);
+            while((t=get_line1(client_fd,buf,buf_size))==(buf_size-1))
+            {
+                big_buf=(char *)realloc(big_buf,sizeof(char)*(t+buf_size));
+                memcpy(big_buf,buf,buf_size);
+                r+=t;
+            }
+            memcpy(big_buf,buf,buf_size);
+            r+=t;
+        }
     }
     if (r == IO_DONE) {
         return IO_DONE;
     }
-    else
+    else {
+        tmp->RBuf.value=big_buf;
         return IO_YET;
+    }
 }
 
 INT_32 handle_request(INT_32 client_fd) {
@@ -411,25 +433,23 @@ INT_32 handle_request(INT_32 client_fd) {
     char method[32];
     char url[256];
     char request_path[256];
-    char *buf;
+    int buf_size=1024;
+    char buf[buf_size];
     memset(method, 0, 256 * sizeof(char));
     memset(url, 0, 256 * sizeof(char));
     memset(request_path, 0, 256 * sizeof(char));
 
-    tmp = find_socket_node(client_fd);
+    tmp = find_socket_node(SocketHeader,client_fd);
     if (tmp->RS != IO_YET) {
         //start read
-        r = get_line(client_fd, tmp);
-        buf = tmp->RBuf.value;
+        r = get_line1(client_fd, buf,buf_size);
         if (r == IO_YET) {
             return IO_YET;
         }
         else {
             tmp->RBuf.status = -REQ_START;
             PRINT_LINE_TITLE("header-start");
-            // printf("-------header start------\n");
             printf("%s", buf);
-
         }
         //设置请求方法
         i = j = 0;
@@ -458,10 +478,11 @@ INT_32 handle_request(INT_32 client_fd) {
             i++;
             j++;
         }
-        sprintf(request_path, "%s/htdocs%s", rootpath, url);
-        tmp->Header.request_path = (char *) malloc((strlen(request_path) + 11) * sizeof(char));
-        strcpy(tmp->Header.request_path, request_path);
-        tmp->Header.request_path[strlen(request_path)] = '\0';
+        url[i]='\0';
+//        sprintf(request_path, "%s/htdocs%s", rootpath, url);
+        // tmp->Header.request_path = (char *) malloc((i + 1) * sizeof(char));
+        memcpy(tmp->Header.request_path, url,i+1);
+//        tmp->Header.request_path[strlen(request_path)] = '\0';
     }
 
     // 处理后续header
@@ -473,12 +494,74 @@ INT_32 handle_request(INT_32 client_fd) {
     }
 }
 
+//*******************************************  Response模块  ********************************
+
+#define LOG_INFO(x) printf("[LOG-INFO]--%s\n", x);fflush(stdout);
+
+//url 路由匹配,不打算用链表存储因为路由表不是动态增加的
+typedef struct urlroute{
+    char route[64];
+    char *(*func)(SocketNode *);
+} URL_ROUTE;
+
+URL_ROUTE route[3];
+void set_url_route(URL_ROUTE *route,char *url_route,char *(*func)(SocketNode *));
+void init_route(URL_ROUTE *route);
+
+void set_url_route(URL_ROUTE *route,char *url_route,char *(*func)(SocketNode *)){
+    strcpy(route->route,url_route);
+    route->func=func;
+}
+
+char *(*get_route_func(URL_ROUTE *route,char *url_route,int count))(SocketNode *){
+    int i=0;
+    for (i = 0; i < count; ++i)
+    {
+        printf("%s-%s\n",route[i].route,url_route);
+        if(!strcasecmp(route[i].route,url_route))
+        {
+            return route[i].func;
+        }
+    }
+    return NULL;
+}
+
+char *route_func1(SocketNode *tmp){
+    char *str;
+    char *s="route.1:hello world\n\0";
+    str=(char *)malloc(1024*sizeof(char));
+    strcpy(str,s);
+    str[strlen(s)]='\0';
+    return str;
+}
+
+char *route_func2(SocketNode *tmp){
+    char *str;
+    char *s="route.2:hello world\n\0";
+    str=(char *)malloc(1024*sizeof(char));
+    strcpy(str,s);
+    str[strlen(s)]='\0';
+    return str;
+}
+void init_route(URL_ROUTE *route)
+{
+    set_url_route(&route[0],"/route1",route_func1);
+    set_url_route(&route[1],"/route2",route_func2);
+
+}
+
+
 INT_32 send_response(INT_32 client_fd) {
     struct stat st;
     SocketNode *tmp;
     char *path;
+    char *data;
     INT_32 r;
-    tmp = find_socket_node(client_fd);
+    char request_path[64];
+    // 路由函数
+    char *(*func)(SocketNode *)=NULL;
+
+    tmp = find_socket_node(SocketHeader,client_fd);
 
     if (tmp == NULL) {
         printf("! find_socket_node error.");
@@ -486,23 +569,46 @@ INT_32 send_response(INT_32 client_fd) {
     }
     if (tmp->SS == IO_YET) {
         // 没有发送完毕,无需判断,直接发送文件
-        r = send_file(client_fd, tmp);
+        r = send_file(client_fd, tmp->Header.request_path,&tmp->SBuf.content_length);
         return r;
     }
-    else if (tmp->Header.request_path != NULL) {
-        path = tmp->Header.request_path;
-        if (path[strlen(path) - 1] == '/')
-            strcat(path, "index.html");
-        path[strlen(path)] = '\0';
-        if ((stat(path, &st) != -1) && ((st.st_mode & S_IFMT) == S_IFREG)) {
-            r = send_file(client_fd, tmp);
-            return r;
+    else{
+        func=get_route_func(route,tmp->Header.request_path,2);
+        if(func==NULL)
+        {
+            if(tmp->Header.request_path == NULL) {
+                perror("! requests path null");
+                exit(1);
+            }
+            sprintf(request_path, "%s/htdocs%s", rootpath, tmp->Header.request_path);
+            if (request_path[strlen(request_path) - 1] == '/')
+                strcat(request_path, "index.html");
+            request_path[strlen(request_path)] = '\0';
+            if ((stat(request_path, &st) != -1) && ((st.st_mode & S_IFMT) == S_IFREG)) {
+                // strcpy(tmp->Header.request_path,request_path);
+                // tmp->Header.request_path[strlen(tmp->Header.request_path)]='\0';
+                memcpy(tmp->Header.request_path,request_path,strlen(request_path)+1);
+                r = send_file(client_fd, tmp->Header.request_path,&tmp->SBuf.content_length);
+                return r;
+            }
+        }
+        else{
+            data=func(tmp);
+            send_data(client_fd,data);
+            free(data);
+            return IO_DONE;
         }
     }
     send_not_found(client_fd);
     return IO_DONE;
 }
 
+void send_continue(int client_fd,SocketNode *tmp){
+
+}
+
+void handle_route(SocketNode *tmp){
+}
 
 void send_headers(INT_32 client_fd) {
     char buf[BUFFER_SIZE];
@@ -512,21 +618,9 @@ void send_headers(INT_32 client_fd) {
     //strcat(buf, "Content-Type: text/html\r\n");
     strcat(buf, "\r\n");
     send(client_fd, buf, strlen(buf), 0);
-
-
-    /*
-    sprintf(buf, "HTTP/1.0 200 OK\r\n");
-    send(client_fd, buf, strlen(buf), 0);
-    sprintf(buf, SERVER_STRING);
-    send(client_fd, buf, strlen(buf), 0);
-    sprintf(buf, "Content-Type: text/html\r\n");
-    send(client_fd, buf, strlen(buf), 0);
-    sprintf(buf, "\r\n");
-    send(client_fd, buf, strlen(buf), 0);
-    */
 }
 
-INT_32 send_file(INT_32 client_fd, SocketNode *tmp) {
+INT_32 send_file(INT_32 client_fd,char *path,long *len) {
     //if((st.st_mode&S_IFMT)==S_IFDIR)
     FILE *fd;
     long file_length = 0;
@@ -534,7 +628,7 @@ INT_32 send_file(INT_32 client_fd, SocketNode *tmp) {
     size_t r = 0;
     long t;
 
-    fd = fopen(tmp->Header.request_path, "r");
+    fd = fopen(path, "r");
     if (fd == NULL) {
         perror("! send_file/fopen error\n");
         exit(1);
@@ -544,8 +638,8 @@ INT_32 send_file(INT_32 client_fd, SocketNode *tmp) {
     rewind(fd);
 
     //设置文件当前指针,为上次没有读完的
-    if (tmp->SS == IO_YET)
-        fseek(fd, tmp->SBuf.current_length, SEEK_SET);
+    if (*len != 0)
+        fseek(fd, *len, SEEK_SET);
     else
         send_headers(client_fd);
     memset(buf, 0, BUFFER_SIZE);
@@ -562,7 +656,7 @@ INT_32 send_file(INT_32 client_fd, SocketNode *tmp) {
                 exit(1);
             }
         }
-        tmp->SBuf.current_length += t;
+        *len+=t;
         memset(buf, 0, BUFFER_SIZE);
         r = fread(buf, sizeof(char), BUFFER_SIZE, fd);
         if (r == 0)
@@ -585,28 +679,20 @@ void send_not_found(INT_32 client) {
     strcat(buf, "</body></html>");
     buf[strlen(buf)] = '\0';
     send(client, buf, strlen(buf), 0);
-
-    /*
-    sprintf(buf, "HTTP/1.0 404 NOT FOUND\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, SERVER_STRING);
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "Content-Type: text/html\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "<HTML><TITLE>Not Found</TITLE>\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "<BODY><P>The server could not fulfill\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "your request because the resource specified\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "is unavailable or nonexistent.\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "</BODY></HTML>\r\n");
-    send(client, buf, strlen(buf), 0);
-    */
 }
+
+void send_data(INT_32 client,char *data) {
+    //不是我每次返回一个指针,而是,传给函数一个buff指针,然后对这个指针内容做修改.
+    char buf[BUFFER_SIZE];
+    memset(buf, 0, BUFFER_SIZE);
+    strcat(buf, "HTTP/1.0 404 NOT FOUND\r\n");
+    strcat(buf, SERVER_STRING);
+    strcat(buf, "Content-Type: text/html\r\n");
+    strcat(buf, "\r\n");
+    send(client, buf, strlen(buf), 0);
+    send(client,data,strlen(data),0);
+}
+
 
 void start_epoll_loop(INT_32 httpd) {
     INT_32 epoll_fd, nfds;
@@ -656,7 +742,7 @@ void start_epoll_loop(INT_32 httpd) {
                             epoll_close(epoll_fd, events[i].data.fd, &ev);
                         SocketNode *tmp = new_socket_node();
                         tmp->client_fd = client_fd;
-                        add_socket_node(tmp);
+                        add_socket_node(SocketHeader,tmp);
                     }
                     if (errno == EAGAIN) TIP printf("! accept EAGAIN\n");
                         //printf("! EAGAIN try again\n");
@@ -697,7 +783,7 @@ void start_epoll_loop(INT_32 httpd) {
 void epoll_close(INT_32 epoll_fd, INT_32 fd, struct epoll_event *ev) {
     if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, ev) == -1)
         printf("! close epoll_ctl error.\n");
-    free_socket_node(fd);
+    free_socket_node(SocketHeader,fd);
     printf("> Socket[%d] close.\n", fd);
 }
 
@@ -803,3 +889,4 @@ void start_select_loop(INT_32 httpd)
     }
 }
 */
+

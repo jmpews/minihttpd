@@ -7,13 +7,14 @@
 //
 
 #include <sys/select.h>
-#include "main.new.h"
+#include "main.h"
 
 INT_32 main(INT_32 argc, const char * argv[]) {
 
     /* struct sockaddr_in server_addr = {0}; */
     int port=7777;
     INT_32 httpd;
+    init_route(route);
     if((httpd=startup(&port))==-1)
     {
         printf("! init socket() error.");

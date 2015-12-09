@@ -1,0 +1,85 @@
+
+
+/*
+    读取一行数据，直至读取完毕，不管数据长度，自动增加。
+*/
+INT_32 get_line2(INT_32 sock, char *tmp) {
+    INT_32 i, j, n;
+    char c = '\0';
+    INT_32 r;
+    INT_32 buf_size = 1024;
+    char buf[buf_size];
+    char *value;
+    // if (tmp->RS == IO_YET) {
+        // 恢复上一次状态
+        // tmp->RS == IO_DONE;
+        // value = tmp->RBuf.value;
+        // n = tmp->RBuf.current_length;
+    // }
+    // else {
+        // free上一次
+        // FREEBUF(tmp->RBuf.value);
+        // n = 0;
+    // }
+    while (1) {
+        i = 0;
+        /* 转换/r/n 到 /n */
+        while ((i < buf_size - 1) && (c != '\n')) {
+            r = recv(sock, &c, 1, 0);
+            if (r > 0) {
+                if (c == '\r') {
+                    /* 从缓冲区copy数据，并不删除数据，如果符合再次读取数据 */
+                    r = recv(sock, &c, 1, MSG_PEEK);
+                    if (r > 0 && c == '\n')
+                        recv(sock, &c, 1, 0);
+                    else
+                        c = '\n';
+
+                    buf[i++] = c;
+                    break;
+                }
+                buf[i] = c;
+                i++;
+            }
+            else {
+                if (errno == EAGAIN)
+                    break;
+            }
+        }
+        // buf[i]='\0';
+        //如果读取0字节,并且EAGAIN,表明读取完毕,提前判断避免malloc
+        if (i == 0 && r < 0 && errno == EAGAIN) {
+            //多余
+            return IO_DONE;
+        }
+        // 分配一块内存,如果这一行过大,要支持realloc
+        if (tmp!=NULL)
+            tmp = (char *) realloc(tmp, (n + i + 1) * sizeof(char));
+        else
+            tmp = (char *) malloc((i + 1) * sizeof(char));
+        //复制读取数据
+        memcpy(tmp + n, buf, i * sizeof(char));
+        n += i;
+        tmp[n] = '\0';
+        //
+        if(i==buf_size-1)
+            continue;
+        //EAGAIN
+        if (r < 0) {
+            if (errno == EAGAIN) {
+                // 这里特殊情况处理下，当读到HEAD_OVER
+                return IO_YET;
+            }
+            else {
+                perror("! get_line error");
+                exit(1);
+            }
+        }
+        else if (r >= 0 && c == '\n') {
+            return n;
+        }
+        else{
+            //表明这一行数据太多,继续读取,realloc.
+        }
+    }
+}
