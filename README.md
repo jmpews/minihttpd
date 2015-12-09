@@ -71,3 +71,11 @@ PS：手动很难模拟并发，一个很模仿并发的情况就是在一个htm
 用宏打印log`#define LOG(t) {printf("log[%d]..........\n",t);fflush(stdout);}`
 
 用宏处理`#define FREEBUF(buf) if(buf){free(buf);buf=NULL;}`
+
+## 2015.12.09
+
+添加了一个简单的url路由模块
+
+做read_line，尽量不要在函数引用过多第三方元素.
+
+同样send_data，尽量不要在这种函数中使用太多第三方的变量.
