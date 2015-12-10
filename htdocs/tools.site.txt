@@ -1,2 +1,7 @@
 xss platform
 http://xsser.me/
+vagrant
+ ubuntu
+ https://cloud-images.ubuntu.com/vagrant/trusty/current/trusty-server-cloudimg-i386-vagrant-disk1.box
+ centos
+ http://cloud.centos.org/centos/7/vagrant/x86_64/images/CentOS-7.box
