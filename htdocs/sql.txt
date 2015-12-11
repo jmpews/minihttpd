@@ -1,0 +1,15 @@
+create table test_table(id int primary key,name varchar(15) not null unique,password varchar(16) not null);
+# 显示表结构
+desc table_name;
+
+# 添加字段
+alter table test_table add create_time timestamp not null default current_timestamp;
+
+# 插入
+insert into test_table (name,password) values ('admin','admin')
+
+# 修改表结构
+alter table test_table change  id id int not null auto_increment;
+
+# select
+select password from test_table where name='admin';
