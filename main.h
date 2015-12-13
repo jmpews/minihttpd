@@ -171,14 +171,14 @@ void free_socket_node(SocketNode *head,INT_32 client_fd) {
     }
 
     tmp->next = k->next;
-    TIP printf("FREE=ID%d,PATH:%s\n",client_fd,k->request.request_path);
+    printf("FREE=ID%d,PATH:%s\n",client_fd,k->request.request_path);
     Jmpfree(k->request.read_cache);
     Jmpfree(k->request.header_dump);
     Jmpfree(k->request.request_path);
     Jmpfree(k->response.response_path);
     Jmpfree(k);
     close(client_fd);
-    printf("> SOCKET[%d] close.\n", client_fd);
+    TIP printf("> SOCKET[%d] close.\n", client_fd);
 }
 
 //*****************************************  服务器初始化模块  ************************************
@@ -753,7 +753,14 @@ int handle_response(int client_fd){
         }
 
     }else if(client_sock->IO_STATUS==RESPONSE){
-        send_file(client_fd,client_sock->response.response_path,&client_sock->response.response_cache_len);
+        r=send_file(client_fd,client_sock->response.response_path,&client_sock->response.response_cache_len);
+        if(r==IO_EAGAIN)
+            return IO_EAGAIN;
+        else if(r==IO_DONE)
+            return IO_DONE;
+        else if(r==IO_ERROR){
+            return IO_ERROR;
+        }
     }
     else{
         printf("! socket 状态码错误.\n");
@@ -831,10 +838,12 @@ INT_32 send_file(INT_32 client_fd,char *file_path,long *len) {
         r = send(client_fd, buf, t, 0);
         if (r < 0) {
             if (errno == EAGAIN) {
+                fclose(fd);
                 return IO_EAGAIN;
             }
             else {
                 printf("! Send Error:");
+                fclose(fd);
                 return IO_ERROR;
             }
         }
