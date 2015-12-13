@@ -419,8 +419,8 @@ int request_header_start(int client_fd){
         memcpy(client_sock->request.request_path, tmp_buf,i+1);
 
         //打印，保存到header_dump
-        PRINT_LINE_TITLE("header-start");
-        printf("%s",buffer);
+        //PRINT_LINE_TITLE("header-start");
+        TIP printf("%s",buffer);
         if (buf.len>buffer_size)
             Jmpfree(buf.malloc_buf);
         client_sock->IO_STATUS=R_HEADER_BODY;
@@ -497,7 +497,7 @@ int request_header_body(INT_32 client_fd){
             buffer=buf.buffer;
 
         handle_header_kv(client_fd, buffer, buf.len);
-        printf("%s",buffer);
+        TIP printf("%s",buffer);
         if (buf.len>buffer_size)
             Jmpfree(buf.malloc_buf);
     }while((strcasecmp(buffer, "\n"))&&r==IO_DONE);
@@ -529,7 +529,7 @@ int request_body(INT_32 client_fd){
     SocketNode *client_sock;
     client_sock=find_socket_node(SocketHead,client_fd);
     client_sock->IO_STATUS=R_BODY;
-    PRINT_LINE_TITLE("header-end");
+    //PRINT_LINE_TITLE("header-end");
     if (!client_sock->request.body_len) {
         client_sock->IO_STATUS=R_RESPONSE;
         return IO_DONE;
