@@ -168,11 +168,11 @@ void free_socket_node(SocketNode *head,INT_32 client_fd) {
     }
 
     tmp->next = k->next;
-
-    Jmpfree(tmp->request.read_cache);
-    Jmpfree(tmp->request.header_dump);
-    Jmpfree(tmp->request.request_path);
-    Jmpfree(tmp->response.response_path);
+    TIP printf("FREE=ID%d,PATH:%s\n",client_fd,k->request.request_path);
+    Jmpfree(k->request.read_cache);
+    Jmpfree(k->request.header_dump);
+    Jmpfree(k->request.request_path);
+    Jmpfree(k->response.response_path);
     Jmpfree(k);
     close(client_fd);
 }
@@ -198,7 +198,7 @@ INT_32 set_nonblocking(INT_32 sockfd) {
 }
 
 SocketNode *SocketHead;
-char rootpath[50];
+char rootpath[256];
 INT_32 startup(INT_32 *port) {
     INT_32 httpd = 0;
     struct sockaddr_in server_addr;
@@ -335,6 +335,7 @@ typedef struct{
 #define M_GET 1
 #define M_POST 2
 
+#define IO_ERROR -1
 #define R_HEADER_INIT 0
 #define R_HEADER_START 1
 #define R_HEADER_BODY 2
@@ -383,7 +384,10 @@ int request_header_start(int client_fd){
             client_sock->request.read_cache_len=0;
         }
     }
-
+    if (buf.len==0) {
+        return IO_ERROR;
+    }
+    
     if (buf.len>buffer_size)
         buffer=buf.malloc_buf;
     else
@@ -428,6 +432,7 @@ int request_header_start(int client_fd){
         if (buf.len>buffer_size)
             Jmpfree(buf.malloc_buf);
         client_sock->IO_STATUS=R_HEADER_BODY;
+        TIP printf("Request=ID:%d,PATH:%s\n",client_fd,client_sock->request.request_path);
         return IO_DONE;
 
     }
@@ -455,7 +460,6 @@ void handle_header_kv(int client_fd,char *buf,int len){
         SocketNode *client_sock;
         client_sock=find_socket_node(SocketHead, client_fd);
         client_sock->request.body_len=atol(buf+i);
-        printf("body-len%ld",client_sock->request.body_len);
     }
 }
 int request_header_body(INT_32 client_fd){
@@ -499,7 +503,7 @@ int request_header_body(INT_32 client_fd){
             buffer=buf.buffer;
 
         handle_header_kv(client_fd, buffer, buf.len);
-        printf("%s",buffer);
+        TIP printf("%s",buffer);
         if (buf.len>buffer_size)
             Jmpfree(buf.malloc_buf);
     }while((strcasecmp(buffer, "\n"))&&r==IO_DONE);
@@ -565,8 +569,8 @@ int request_body(INT_32 client_fd){
             buffer=buf.buffer;
 
         buf.buffer[buf.len]='\0';
-        printf("%s",buffer);
-        printf("");
+        TIP printf("%s",buffer);
+        printf("\0");
         fflush(stdout);
         if (buf.len>buffer_size)
             Jmpfree(buf.malloc_buf);
@@ -591,7 +595,7 @@ int handle_request(int client_fd){
     client_sock=find_socket_node(SocketHead,client_fd);
     switch (client_sock->IO_STATUS) {
         case R_HEADER_INIT:
-            printf("");
+            printf("\0");
         case R_HEADER_START:
         {
             r=request_header_start(client_fd);
@@ -622,6 +626,7 @@ int handle_request(int client_fd){
 //*******************************************  Response模块  ********************************
 void send_data(INT_32 client,char *data);
 INT_32 send_file(INT_32 client_fd,char *file_path,long *len);
+void send_not_found(INT_32 client_fd);
 //------------------------------------路由匹配-------------------------------
 typedef struct urlroute{
     char route[64];
@@ -693,13 +698,13 @@ char *handle_route(SocketNode *client_sock,char *route_key){
 
 
 int handle_response(int client_fd){
-    char response_path[64];
+    char response_path[256];
     RouteFunc func;
     SocketNode *client_sock;
-    char *resp;
+    char *resp=NULL;
     struct stat st;
     int r;
-    memset(response_path, 0, 64);
+    memset(response_path, 0, 256);
     //空异常 TODO
     client_sock=find_socket_node(SocketHead, client_fd);
     if((client_sock->IO_STATUS==R_RESPONSE)&&(!client_sock->response.response_cache_len))
@@ -712,13 +717,14 @@ int handle_response(int client_fd){
         }
         else{
             client_sock->IO_STATUS=RESPONSE;
-//              strcpy(response_path,"/root/httpd/index.html");
-//            strcpy(response_path,"/Users/jmpews/Desktop/jmp2httpd/jmp2httpd/htdocs/index.html");
+            //strcpy(response_path,"/root/httpd/index.html");
+            //strcpy(response_path,"/Users/jmpews/Desktop/jmp2httpd/jmp2httpd/htdocs/index.html");
             sprintf(response_path, "%s/htdocs%s", rootpath, client_sock->request.request_path);
+            //sprintf(response_path, "/Users/jmpews/Desktop/jmp2httpd/jmp2httpd/htdocs%s", client_sock->request.request_path);
             if (response_path[strlen(response_path) - 1] == '/')
                 strcat(response_path, "index.html");
             response_path[strlen(response_path)] = '\0';
-            printf("%s\n",response_path);
+            //printf("%s\n",response_path);
             fflush(stdout);
             if ((stat(response_path, &st) != -1) && ((st.st_mode & S_IFMT) == S_IFREG)) {
                 // strcpy(tmp->Header.request_path,request_path);
@@ -730,6 +736,10 @@ int handle_response(int client_fd){
                     return IO_EAGAIN;
                 else if(r==IO_DONE)
                     return IO_DONE;
+            }
+            else{
+                send_not_found(client_fd);
+                return IO_DONE;
             }
 
         }
@@ -875,7 +885,7 @@ void select_loop(INT_32 httpd){
                 if (maxfd<i)
                     maxfd=i;
         }
-        r=select(maxfd+1, &tmp_read_fds, &tmp_write_fds, &tmp_exception_fds, &tv);
+        r=select(maxfd+2, &tmp_read_fds, &tmp_write_fds, &tmp_exception_fds, &tv);
         if (r<0)
             printf("! select() error.");
         else
