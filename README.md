@@ -79,3 +79,41 @@ PS：手动很难模拟并发，一个很模仿并发的情况就是在一个htm
 做read_line，尽量不要在函数引用过多第三方元素.
 
 同样send_data，尽量不要在这种函数中使用太多第三方的变量.
+
+## 2015.12.13
+重构，更加规范，并且引入列表。
+
+```
+switch(IO_HEADER_STATUS)
+    0. IO_HEADER_INIT
+    1. IO_HEADER_START
+    request_header_start(请求方法，请求路径)
+        > read_line()
+            如果当前状态，已经是START，需要合并header_line_buffer数据
+        > * 读完，调用handle_header_start处理。
+        > * 没有读完(最后一位!='\n'&&EAGAIN)，保存读取数据到header_line_buffer，状态为IO_HEADER_START
+
+    2. IO_HEADER_BODY
+    request_header_body(各种键值对)
+        > read_line()
+            如果当前状态，已经是HEADER_BODY，需要合并header_line_buffer数据
+        > 匹配队列内关键字
+        > 如果read_line返回'\n',处理完毕，设置状态IO_HEADER_BODY
+
+    3. IO_BODY
+        handle_body()
+        读取request_body
+    break;
+
+1. 响应状态处理。
+处理函数保存到队列里面，每次处理扫描队列，如果关键字在队列中，调用响应的函数
+
+
+0. R_RESPONSE
+    分析route调用合适函数处理
+        * 直接返回
+        * 分析request_path.
+1. RESPONSE
+    恢复response_cache_len
+    读取request_path 返回
+```
