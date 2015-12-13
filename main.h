@@ -497,7 +497,7 @@ int request_header_body(INT_32 client_fd){
             buffer=buf.buffer;
 
         handle_header_kv(client_fd, buffer, buf.len);
-        TIP printf("%s",buffer);
+        printf("%s",buffer);
         if (buf.len>buffer_size)
             Jmpfree(buf.malloc_buf);
     }while((strcasecmp(buffer, "\n"))&&r==IO_DONE);
