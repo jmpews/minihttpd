@@ -32,6 +32,9 @@
 #define SERVER_STRING "Server: jmp2httpd 0.1.0\r\n"
 #define PRINT_LINE_TITLE(str) printf("\n----------------%s----------------\n", str);
 
+#define IO_ERROR -1
+
+
 //********************通用性链表**********************
 
 typedef  void ElemType;
@@ -135,7 +138,7 @@ void add_socket_node(SocketNode *head,SocketNode *client) {
 }
 
 void free_socket_node(SocketNode *head,INT_32 client_fd) {
-    TIP printf("> SOCKET[%d] free.\n", client_fd);
+    
     SocketNode *tmp = head;
     SocketNode *k=NULL;
     //空链表
@@ -175,6 +178,7 @@ void free_socket_node(SocketNode *head,INT_32 client_fd) {
     Jmpfree(k->response.response_path);
     Jmpfree(k);
     close(client_fd);
+    printf("> SOCKET[%d] close.\n", client_fd);
 }
 
 //*****************************************  服务器初始化模块  ************************************
@@ -261,34 +265,23 @@ INT_32 read_line(INT_32 sock, char *buf,int BUF_SIZE,int *len) {
             buf[t] = c;
             t++;
         }
-        else {
-            if (errno == EAGAIN)
-                break;
-            else
-            {
-                perror("recv error:");
-                exit(1);
-            }
-        }
+        else
+            break;
     }
     buf[t]='\0';
     *len=t;
     if (r < 0) {
         if (errno == EAGAIN) {
             return IO_EAGAIN;
-            /*
-             if(t)
-             return IO_EAGAIN;
-             else
-             return IO_DONE;
-             */
         }
         else {
             perror("! get_line error");
-            exit(1);
+            return IO_ERROR;
         }
     }
-    return IO_DONE;
+    else if(r>0)
+        return IO_DONE;
+    return IO_ERROR;
 }
 
 int read_line_more(int client_fd, char *buf, int buffer_size, char **malloc_buffer, int *len) {
@@ -320,10 +313,11 @@ int read_line_more(int client_fd, char *buf, int buffer_size, char **malloc_buff
         *len=n;
         *malloc_buffer=malloc_buf;
     }
-    if(r==IO_EAGAIN)
-        return IO_EAGAIN;
-    else
+    if(r==IO_DONE)
         return IO_DONE;
+    else if(r==IO_EAGAIN)
+        return IO_EAGAIN;
+    return IO_ERROR;
 
 }
 typedef struct{
@@ -335,7 +329,6 @@ typedef struct{
 #define M_GET 1
 #define M_POST 2
 
-#define IO_ERROR -1
 #define R_HEADER_INIT 0
 #define R_HEADER_START 1
 #define R_HEADER_BODY 2
@@ -384,9 +377,8 @@ int request_header_start(int client_fd){
             client_sock->request.read_cache_len=0;
         }
     }
-    if (buf.len==0) {
+    if (buf.len==0)
         return IO_ERROR;
-    }
     
     if (buf.len>buffer_size)
         buffer=buf.malloc_buf;
@@ -436,7 +428,7 @@ int request_header_start(int client_fd){
         return IO_DONE;
 
     }
-    else{
+    else if(r==IO_EAGAIN){
         client_sock->IO_STATUS=R_HEADER_START;
         client_sock->request.read_cache=(char *)malloc(buf.len);
         memcpy(client_sock->request.read_cache, buffer, buf.len);
@@ -444,6 +436,8 @@ int request_header_start(int client_fd){
         Jmpfree(buf.malloc_buf);
         return IO_EAGAIN;
     }
+    Jmpfree(buf.malloc_buf);
+    return IO_ERROR;
 }
 void handle_header_kv(int client_fd,char *buf,int len){
     char key[64];
@@ -512,7 +506,7 @@ int request_header_body(INT_32 client_fd){
         client_sock->IO_STATUS=R_BODY;
         return IO_DONE;
     }
-    else{
+    else if(r==IO_EAGAIN){
         client_sock->IO_STATUS=R_HEADER_BODY;
         client_sock->request.read_cache=(char *)malloc(buf.len);
         memcpy(client_sock->request.read_cache, buffer, buf.len);
@@ -520,6 +514,8 @@ int request_header_body(INT_32 client_fd){
         Jmpfree(buf.malloc_buf);
         return IO_EAGAIN;
     }
+    Jmpfree(buf.malloc_buf);
+    return IO_ERROR;
 
 }
 
@@ -562,7 +558,6 @@ int request_body(INT_32 client_fd){
             client_sock->request.read_cache_len=0;
         }
 
-
         if (buf.len>buffer_size)
             buffer=buf.malloc_buf;
         else
@@ -580,7 +575,10 @@ int request_body(INT_32 client_fd){
             return IO_DONE;
         }
     }while(r==IO_DONE);
-
+    
+    if (r==IO_ERROR) {
+        return IO_ERROR;
+    }
     client_sock->IO_STATUS=R_BODY;
     //    client_sock->request.read_cache=(char *)malloc(buf.len);
     //    memcpy(client_sock->request.read_cache, buffer, buf.len);
@@ -602,6 +600,9 @@ int handle_request(int client_fd){
             if (r==IO_EAGAIN) {
                 return IO_EAGAIN;
             }
+            else if(r==IO_ERROR)
+                return IO_ERROR;
+            
         }
         case R_HEADER_BODY:
         {
@@ -609,6 +610,8 @@ int handle_request(int client_fd){
             if (r==IO_EAGAIN) {
                 return IO_EAGAIN;
             }
+            else if(r==IO_ERROR)
+                return IO_ERROR;
         }
         case R_BODY:
         {
@@ -616,6 +619,8 @@ int handle_request(int client_fd){
             if (r==IO_EAGAIN) {
                 return IO_EAGAIN;
             }
+            else if(r==IO_ERROR)
+                return IO_ERROR;
         }
         default:
             break;
@@ -736,6 +741,9 @@ int handle_response(int client_fd){
                     return IO_EAGAIN;
                 else if(r==IO_DONE)
                     return IO_DONE;
+                else if(r==IO_ERROR){
+                    return IO_ERROR;
+                }
             }
             else{
                 send_not_found(client_fd);
@@ -827,7 +835,7 @@ INT_32 send_file(INT_32 client_fd,char *file_path,long *len) {
             }
             else {
                 printf("! Send Error:");
-                exit(1);
+                return IO_ERROR;
             }
         }
         *len+=r;
@@ -887,7 +895,7 @@ void select_loop(INT_32 httpd){
         }
         r=select(maxfd+2, &tmp_read_fds, &tmp_write_fds, &tmp_exception_fds, &tv);
         if (r<0)
-            printf("! select() error.");
+            perror("! select() error.");
         else
         {
             if (FD_ISSET(httpd,&tmp_read_fds)) {
@@ -919,16 +927,20 @@ void select_loop(INT_32 httpd){
                             {
                                 FD_CLR(i,&read_fds);
                                 FD_SET(i,&write_fds);
-                            } else if (IO_EAGAIN) {
-                                close(i);
-                                FD_CLR(i, &read_fds);
+                            } else if (r==IO_ERROR) {
+                                free_socket_node(SocketHead, i);
+                                FD_CLR(i,&read_fds);
                                 client_array[i]=0;
+                            }
+                            else if(r==IO_EAGAIN){
+                                TIP printf("EAGAIN:wow.");
                             }
                         }
                         else if(FD_ISSET(i,&tmp_write_fds))
                         {
                             //send data
-                            if(handle_response(i)==IO_DONE){
+                            r=handle_response(i);
+                            if(r==IO_DONE||r==IO_ERROR){
                                 free_socket_node(SocketHead, i);
                                 FD_CLR(i,&write_fds);
                                 client_array[i]=0;
