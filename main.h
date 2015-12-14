@@ -148,11 +148,11 @@ void free_socket_node(SocketNode *head,INT_32 client_fd) {
     }
     if (head->client_fd==client_fd) {
         head=head->next;
-        Jmpfree(tmp->request.read_cache);
-        Jmpfree(tmp->request.header_dump);
-        Jmpfree(tmp->request.request_path);
-        Jmpfree(tmp->response.response_path);
-        Jmpfree(tmp);
+        Jmpfree(k->request.read_cache);
+        Jmpfree(k->request.header_dump);
+        Jmpfree(k->request.request_path);
+        Jmpfree(k->response.response_path);
+        Jmpfree(k);
         close(client_fd);
         return;
     }
@@ -177,8 +177,9 @@ void free_socket_node(SocketNode *head,INT_32 client_fd) {
     Jmpfree(k->request.request_path);
     Jmpfree(k->response.response_path);
     Jmpfree(k);
+
     close(client_fd);
-    TIP printf("> SOCKET[%d] close.\n", client_fd);
+    TIP printf("> SOCKET[%d] ready close.\n", client_fd);
 }
 
 //*****************************************  服务器初始化模块  ************************************
@@ -866,6 +867,7 @@ void select_loop(INT_32 httpd){
     socklen_t addr_len;
     addr_len=sizeof(struct sockaddr_in);
 
+    char c;
     int i,j,r,MAX_CLIENTS;
     MAX_CLIENTS=1024;
 
@@ -930,6 +932,15 @@ void select_loop(INT_32 httpd){
                     {
                         if(FD_ISSET(i,&tmp_read_fds))
                         {
+                            r = recv(i, &c, 1, MSG_PEEK);
+                            if(r<1){
+                                    printf("CLOSE=ID:%d\n",i);
+                                    free_socket_node(SocketHead, i);
+                                    FD_CLR(i,&read_fds);
+                                    client_array[i]=0;
+                                    fflush(stdout);
+                                    continue;
+                            }
                             //read data or close connect
                             r=handle_request(i);
                             if(r==IO_DONE)
@@ -937,6 +948,7 @@ void select_loop(INT_32 httpd){
                                 FD_CLR(i,&read_fds);
                                 FD_SET(i,&write_fds);
                             } else if (r==IO_ERROR) {
+                                printf("IO_ERROR=ID:%d",i);
                                 free_socket_node(SocketHead, i);
                                 FD_CLR(i,&read_fds);
                                 client_array[i]=0;
@@ -950,9 +962,12 @@ void select_loop(INT_32 httpd){
                             //send data
                             r=handle_response(i);
                             if(r==IO_DONE||r==IO_ERROR){
-                                free_socket_node(SocketHead, i);
+                                shutdown(i,SHUT_WR);
                                 FD_CLR(i,&write_fds);
-                                client_array[i]=0;
+                                FD_SET(i,&read_fds);
+                                //free_socket_node(SocketHead, i);
+                                //FD_CLR(i,&write_fds);
+                                //client_array[i]=0;
                             }
                         }
                     }
