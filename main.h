@@ -6,6 +6,30 @@
 //  Copyright © 2015年 jmpews. All rights reserved.
 //
 
+//1. 每一个while除了需要判断需要的条件，还需要限制循环次数(即for的第三个参数)。
+//2. string的结尾字符\0
+//3. recv的MSG_PEEK参数，仅仅copy读取的buff，并不删除。
+//4. malloc 要考虑所有可能的异常情况然后free
+//5. segmentation fault (core dumped),内存问题,有没有初始化等等!
+//6. strcp的坑
+// malloc() 和""不一样，对于'\0',""默认长度+1
+/*  char * file1=(char *)malloc(2*sizeof(char));
+ file1[0]='a';
+ file1[1]='b';
+ file1[2]='c';
+ char * file2="ab";
+ printf("ABequal:%d\n",strcmp(file1,file2));
+ */
+
+//7. Content-Type: 有坑,要注意设置.
+//8. 对于错误处理要果断,如果该错误是自己assert不会出错,那就直接打印error code然后exit,不要强行继续处理.
+//9. 发送缓冲区的处理,8k左右字节,read了多少数据,就send多少数据,如果send返回缓冲区满了异常,那就重新将事件丢入,循环.
+//10.规范化状态码
+//11.header状态码处理
+//12.如何读一个长度很大并且未知的数据,先分配一个缓存char buf[1024],每次读到buf,并且记录每次读取的数量,然后realloc重新分配空间,直至终>点
+//13.读取body一行没有\n最后的处理
+//14. 正确关闭socket！！！！！！ 先关闭写，然后等待客户端去关闭。shutdown(i,SHUT_WR); 会把缓冲区数据发送完毕，接受到ACK，再发送FIN，告诉浏览器没有需要写的数据了，等待客户端关闭。『客户端关』
+
 #ifndef main_h
 #define main_h
 
