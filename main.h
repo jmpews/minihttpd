@@ -69,7 +69,7 @@ typedef struct node
 }ListNode;
 
 
-typedef  int (*FindElemFunc)(ElemType *,void *key);
+typedef int (*FindElemFunc)(ElemType *,void *key);
 
 int ListAppend(ListNode *,ElemType *);
 ElemType *GetElem(ListNode *,FindElemFunc,void *);
@@ -227,7 +227,9 @@ INT_32 set_nonblocking(INT_32 sockfd) {
 }
 
 SocketNode *SocketHead;
+//保存跟目录
 char rootpath[256];
+
 INT_32 startup(INT_32 *port) {
     INT_32 httpd = 0;
     struct sockaddr_in server_addr;
@@ -309,6 +311,7 @@ INT_32 read_line(INT_32 sock, char *buf,int BUF_SIZE,int *len) {
     return IO_ERROR;
 }
 
+//读取一行无论数据有多长
 int read_line_more(int client_fd, char *buf, int buffer_size, char **malloc_buffer, int *len) {
     int r;
     int n = 0;
@@ -353,6 +356,7 @@ typedef struct{
 
 #define M_GET 1
 #define M_POST 2
+#define M_ERROR -1
 
 #define R_HEADER_INIT 0
 #define R_HEADER_START 1
@@ -361,10 +365,6 @@ typedef struct{
 #define R_RESPONSE 4
 #define RESPONSE 5
 
-//#define R_HEADER_START 1
-//#define R_HEADER_START 1
-//#define R_HEADER_START 1
-//#define R_HEADER_START 1
 
 
 //处理请求的第一行,获取请求方法,请求路径
@@ -381,7 +381,8 @@ int request_header_start(int client_fd){
     client_sock->IO_STATUS=R_HEADER_START;
 
     r=read_line_more(client_fd, buf.buffer, buffer_size, &buf.malloc_buf, &buf.len);
-
+    if (buf.len==0)
+        return IO_ERROR;
     //如果已经是当前状态,read_cache内有上次缓存数据
     if(client_sock->IO_STATUS==R_HEADER_START){
         if(client_sock->request.read_cache_len){
@@ -402,8 +403,7 @@ int request_header_start(int client_fd){
             client_sock->request.read_cache_len=0;
         }
     }
-    if (buf.len==0)
-        return IO_ERROR;
+
     
     if (buf.len>buffer_size)
         buffer=buf.malloc_buf;
@@ -419,13 +419,15 @@ int request_header_start(int client_fd){
         tmp_buf[i] = '\0';
         if (strcasecmp(tmp_buf, "GET") && strcasecmp(tmp_buf, "POST")) {
             printf("! request method not support.\n");
-            exit(1);
+            //exit(1);
         }
         if (!strcasecmp(tmp_buf, "GET"))
             client_sock->request.method = M_GET;
         else if (!strcasecmp(tmp_buf, "POST"))
             client_sock->request.method = M_POST;
-
+        else
+            client_sock->request.method=M_ERROR;
+        
         while (is_space(buffer[j]) && (j < buffer_size))
             j++;
 
@@ -541,7 +543,6 @@ int request_header_body(INT_32 client_fd){
     }
     Jmpfree(buf.malloc_buf);
     return IO_ERROR;
-
 }
 
 
@@ -623,6 +624,8 @@ int handle_request(int client_fd){
         {
             r=request_header_start(client_fd);
             if (r==IO_EAGAIN) {
+                if (client_sock->request.method==M_ERROR)
+                    return IO_ERROR;
                 return IO_EAGAIN;
             }
             else if(r==IO_ERROR)
@@ -633,6 +636,8 @@ int handle_request(int client_fd){
         {
             r=request_header_body(client_fd);
             if (r==IO_EAGAIN) {
+                if (client_sock->request.method==M_ERROR)
+                    return IO_ERROR;
                 return IO_EAGAIN;
             }
             else if(r==IO_ERROR)
@@ -641,7 +646,7 @@ int handle_request(int client_fd){
         case R_BODY:
         {
             r=request_body(client_fd);
-            if (r==IO_EAGAIN) {
+            if (r==IO_EAGAIN||(client_sock->request.method==M_ERROR)) {
                 return IO_EAGAIN;
             }
             else if(r==IO_ERROR)
@@ -989,9 +994,6 @@ void select_loop(INT_32 httpd){
                                 shutdown(i,SHUT_WR);
                                 FD_CLR(i,&write_fds);
                                 FD_SET(i,&read_fds);
-                                //free_socket_node(SocketHead, i);
-                                //FD_CLR(i,&write_fds);
-                                //client_array[i]=0;
                             }
                         }
                     }
@@ -1002,7 +1004,9 @@ void select_loop(INT_32 httpd){
 }
 
 //*******************************************  EPoll模块  ********************************
-/*
+
+#ifdef DEF_EPOLL
+
 #include <sys/epoll.h>
 void epoll_loop(INT_32 httpd) {
     INT_32 epoll_fd, nfds;
@@ -1012,6 +1016,7 @@ void epoll_loop(INT_32 httpd) {
     INT_32 s;
     INT_32 i;
     INT_32 r;
+    char c;
     struct epoll_event ev;
     struct epoll_event *events;
     struct sockaddr_in client_addr;
@@ -1061,22 +1066,41 @@ void epoll_loop(INT_32 httpd) {
                     continue;
                 }
                 else {
+                    // 判断读取到0长度数据表明，客户端主动关闭
+                    r = recv(i, &c, 1, MSG_PEEK);
+                    if(r<1){
+                        printf("CLOSE=ID:%d\n",i);
+                        free_socket_node(SocketHead, i);
+                        FD_CLR(i,&read_fds);
+                        client_array[i]=0;
+                        fflush(stdout);
+                        continue;
+                    }
                     r = handle_request(events[i].data.fd);
                     if (r == IO_DONE) {
                         ev.data.fd = events[i].data.fd;
                         ev.events = EPOLLOUT | EPOLLET;
                         s = epoll_ctl(epoll_fd, EPOLL_CTL_MOD, events[i].data.fd, &ev);
+                    }else if (r==IO_ERROR) {
+                        printf("IO_ERROR=ID:%d",i);
+                        free_socket_node(SocketHead, i);
+                        if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, events[i].data.fd, NULL) == -1)
+                            printf("! close epoll_ctl error.\n");
+                    }
+                    else if(r==IO_EAGAIN){
+                        TIP printf("EAGAIN:wow.");
                     }
 
                 }
             }
             else if (events[i].events & EPOLLOUT) {
                 r = handle_response(events[i].data.fd);
-                if (IO_DONE == r){
-                    if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, events[i].data.fd, NULL) == -1)
-                        printf("! close epoll_ctl error.\n");
-                    free_socket_node(SocketHead,events[i].data.fd);
-                    printf("> Socket[%d] close.\n", events[i].data.fd);
+                if(r==IO_DONE||r==IO_ERROR){
+                    //优雅关闭socekt，采用shutdown，先关闭写通道，然后让客户端主动关闭
+                    shutdown(i,SHUT_WR);
+                    ev.data.fd = events[i].data.fd;
+                    ev.events = EPOLLIN | EPOLLET;
+                    s = epoll_ctl(epoll_fd, EPOLL_CTL_MOD, events[i].data.fd, &ev);
                 }
             }
             else {
@@ -1085,4 +1109,4 @@ void epoll_loop(INT_32 httpd) {
         }
     }
 }
-*/
+#endif
