@@ -906,8 +906,6 @@ void select_loop(INT_32 httpd){
     int maxfd;
     maxfd=0;
 
-    tv.tv_sec=5;
-    tv.tv_usec=0;
     fd_set read_fds;
     fd_set write_fds;
     fd_set exception_fds;
@@ -933,6 +931,8 @@ void select_loop(INT_32 httpd){
                 if (maxfd<i)
                     maxfd=i;
         }
+        tv.tv_sec=5;
+        tv.tv_usec=0;
         r=select(maxfd+2, &tmp_read_fds, &tmp_write_fds, &tmp_exception_fds, &tv);
         if (r<0)
             perror("! select() error.");
