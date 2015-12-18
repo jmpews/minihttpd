@@ -117,3 +117,9 @@ switch(IO_HEADER_STATUS)
     恢复response_cache_len
     读取request_path 返回
 ```
+
+## 2015.12.18
+fix bug: 
+
+select的timeout每次会进行重置，所以需要在每次select之前进行重新设置
+
