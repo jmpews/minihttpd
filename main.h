@@ -58,6 +58,9 @@
 
 #define IO_ERROR -1
 
+ //*******************通用性配置********************
+ #define PRINT_HADER 1
+
 
 //********************通用性链表**********************
 
@@ -524,7 +527,8 @@ int request_header_body(INT_32 client_fd){
             buffer=buf.buffer;
 
         handle_header_kv(client_fd, buffer, buf.len);
-        TIP printf("%s",buffer);
+        if(PRINT_HADER)
+            printf("%s",buffer);
         if (buf.len>buffer_size)
             Jmpfree(buf.malloc_buf);
     }while((strcasecmp(buffer, "\n"))&&r==IO_DONE);
