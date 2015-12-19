@@ -436,7 +436,7 @@ int request_header_start(int client_fd){
 
         //设置请求路径
         i = 0;
-        while (!is_space(buffer[j]) && (j < buffer_size)) {
+        while (!is_space(buffer[j]) && (j < buffer_size) && (buffer[i]!='?')) {
             tmp_buf[i] = buffer[j];
             i++;
             j++;
