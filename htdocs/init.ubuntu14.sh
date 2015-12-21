@@ -7,6 +7,7 @@ sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak
 # LANGUAGE="zh_CN:zh" 
 sudo locale-gen zh_CN.UTF-8
 
+# 安装git
 sudo apt-get install git
 
 # install pyenv
