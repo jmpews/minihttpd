@@ -920,6 +920,8 @@ void select_loop(INT_32 httpd){
     FD_ZERO(&write_fds);
     FD_ZERO(&exception_fds);
 
+    char ipaddr[32];
+
     FD_SET(httpd,&read_fds);
     client_array[httpd]=1;
 
@@ -948,12 +950,14 @@ void select_loop(INT_32 httpd){
                     printf("! client connect error.");
                 else
                 {
+                    inet_ntop(AF_INET, &(client_addr.sin_addr), ipaddr, 32 * sizeof(char));
+                    printf("> SOCKET[%d] Accept : %s\n", client_fd, ipaddr);
+                    
                     set_nonblocking(client_fd);
                     SocketNode *tmp = new_socket_node();
                     tmp->client_fd = client_fd;
                     add_socket_node(SocketHead,tmp);
 
-                    printf("> connect %d comming.\n",client_fd);
                     FD_SET(client_fd,&read_fds);
                     client_array[client_fd]=1;
                     maxfd=(maxfd < client_fd)?client_fd:maxfd;
