@@ -369,6 +369,26 @@ typedef struct{
 #define RESPONSE 5
 
 
+int handle_error(int client_fd){
+    int buffer_size=1024;
+    JmpBuffer buf;
+    int r;
+    char *buffer;
+    read_line_more(client_fd, buf.buffer, buffer_size, &buf.malloc_buf, &buf.len);
+    do{
+        if (buf.len>buffer_size)
+            buffer=buf.malloc_buf;
+        else
+            buffer=buf.buffer;
+        
+        if(PRINT_HADER)
+            printf("%s",buffer);
+        if (buf.len>buffer_size)
+            Jmpfree(buf.malloc_buf);
+    }while(read_line_more(client_fd, buf.buffer, buffer_size, &buf.malloc_buf, &buf.len)==0);
+    Jmpfree(buf.malloc_buf);
+    return IO_ERROR;
+}
 
 //处理请求的第一行,获取请求方法,请求路径
 int request_header_start(int client_fd){
@@ -421,7 +441,8 @@ int request_header_start(int client_fd){
         }
         tmp_buf[i] = '\0';
         if (strcasecmp(tmp_buf, "GET") && strcasecmp(tmp_buf, "POST")) {
-            printf("! request method not support.\n");
+            printf("! ERROR-BUFFER:\n%s",buffer);
+            return handle_error(client_fd);
             //exit(1);
         }
         if (!strcasecmp(tmp_buf, "GET"))
@@ -450,7 +471,8 @@ int request_header_start(int client_fd){
 
         //打印，保存到header_dump
         //PRINT_LINE_TITLE("header-start");
-        TIP printf("%s",buffer);
+        if(PRINT_HADER)
+            printf("%s",buffer);
         if (buf.len>buffer_size)
             Jmpfree(buf.malloc_buf);
         client_sock->IO_STATUS=R_HEADER_BODY;
@@ -985,9 +1007,9 @@ void select_loop(INT_32 httpd){
                                 FD_CLR(i,&read_fds);
                                 FD_SET(i,&write_fds);
                             } else if (r==IO_ERROR) {
-                                printf("IO_ERROR=ID:%d",i);
-                                free_socket_node(SocketHead, i);
+                                printf("CLOSE=ID:%d\n",i);
                                 FD_CLR(i,&read_fds);
+                                free_socket_node(SocketHead, i);
                                 client_array[i]=0;
                             }
                             else if(r==IO_EAGAIN){

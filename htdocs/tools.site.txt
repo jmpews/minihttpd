@@ -12,3 +12,6 @@ movie
 bt_download
  https://btdigg.org
  http://www.bt2mag.com/
+
+linux_man_pages
+ http://man7.org/linux/man-pages/man2/chmod.2.html
