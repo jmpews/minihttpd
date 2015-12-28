@@ -21,3 +21,7 @@ all_type_sql_test
 
 network programmping
  http://beej-zhcn.netdpi.net/
+
+CVE
+ http://cve.scap.org.cn/
+ https://cwe.mitre.org/data
