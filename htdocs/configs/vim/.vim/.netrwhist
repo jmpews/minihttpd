@@ -1,0 +1,9 @@
+let g:netrw_dirhistmax  =10
+let g:netrw_dirhist_cnt =7
+let g:netrw_dirhist_1='/Users/jmpews/.oh-my-zsh'
+let g:netrw_dirhist_2='/Users/jmpews/Library'
+let g:netrw_dirhist_3='/Users/jmpews/jmpblog/output'
+let g:netrw_dirhist_4='/Users/jmpews/codeanything/Django/mysite'
+let g:netrw_dirhist_5='/Users/jmpews/.vim/colors'
+let g:netrw_dirhist_6='/Users/jmpews/Desktop/jmp2httpd/jmp2httpd'
+let g:netrw_dirhist_7='/Users/jmpews/.vim/bundle/Vundle.vim'
