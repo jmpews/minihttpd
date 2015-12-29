@@ -8,4 +8,9 @@ useradd jmpews -p @f0reverl0ve -g 0
 
 # modify iptables
 iptables-save ./iptables.rules.bak
-iptables -A INPUT -p icmp -j DROP
+iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -A INPUT -p tcp --match multiport --dports 22,80,7777,443 -j ACCEPT
+iptables -A INPUT -j DROP
+iptables-save ./iptables.up.rules
+
+
