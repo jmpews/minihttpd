@@ -13,9 +13,9 @@ colorscheme onedark
 set guifont=Monaco:h12 " 设置字体
 set encoding=utf-8
 
-if filereadable(expand("~/.vimrc.bundles"))
-source ~/.vimrc.bundles
-endif
+"if filereadable(expand("~/.vimrc.bundles"))
+"source ~/.vimrc.bundles
+"endif
 
 " Display extra whitespace
 set list listchars=tab:»·,trail:·
