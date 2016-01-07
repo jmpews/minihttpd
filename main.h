@@ -321,7 +321,7 @@ int read_line_more(int client_fd, char *buf, int buffer_size, char **malloc_buff
     int t;
     char *malloc_buf=*malloc_buffer;
     *len=0;
-    Jmpfree(malloc_buf);
+    //Jmpfree(malloc_buf);
 
     r = read_line(client_fd, buf, buffer_size, &t);
     if (t == (buffer_size-1) && r == IO_DONE) {
