@@ -8,6 +8,7 @@ vagrant
 
 movie
  http://www.hdwan.net/
+ http://www.bttt8.com/
 
 bt_download
  https://btdigg.org
