@@ -473,6 +473,11 @@ int request_header_start(int client_fd){
         //PRINT_LINE_TITLE("header-start");
         if(PRINT_HADER)
             printf("%s",buffer);
+
+        client_sock->request.header_dump=(char *)malloc(buf.len);
+        memcpy(client_sock->request.header_dump+client_sock->request.header_dump_len, buffer, buf.len);
+        client_sock->request.header_dump_len=buf.len;
+        
         if (buf.len>buffer_size)
             Jmpfree(buf.malloc_buf);
         client_sock->IO_STATUS=R_HEADER_BODY;
@@ -551,6 +556,9 @@ int request_header_body(INT_32 client_fd){
         handle_header_kv(client_fd, buffer, buf.len);
         if(PRINT_HADER)
             printf("%s",buffer);
+        client_sock->request.header_dump=(char *)realloc(client_sock->request.header_dump,buf.len+client_sock->request.header_dump_len+1);
+        memcpy(client_sock->request.header_dump+client_sock->request.header_dump_len, buffer, buf.len);
+        client_sock->request.header_dump_len+=buf.len;
         if (buf.len>buffer_size)
             Jmpfree(buf.malloc_buf);
     }while((strcasecmp(buffer, "\n"))&&r==IO_DONE);
@@ -774,7 +782,6 @@ int handle_response(int client_fd){
         resp=handle_route(client_sock, client_sock->request.request_path);
         if (resp) {
             send_data(client_fd,resp);
-            Jmpfree(resp);
         }
         else{
             client_sock->IO_STATUS=RESPONSE;
