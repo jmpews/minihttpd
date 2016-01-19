@@ -29,3 +29,12 @@ CVE
 
 VirusScan
  https://www.virustotal.com
+
+regex
+ https://regex101.com/
+
+linux-tools
+ http://linuxtools-rst.readthedocs.org/
+
+mirror
+ http://mirrors.ustc.edu.cn/
