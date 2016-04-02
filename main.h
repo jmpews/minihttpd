@@ -52,14 +52,14 @@
 #define is_space(x) isspace((INT_32)(x))
 #define TIP if(1){}else
 #define INT_32 int
-#define Jmpfree(buf) if(buf){free(buf);buf=NULL;}
+#define free_buf(buf) if(buf){free(buf);buf=NULL;}
 #define SERVER_STRING "Server: jmp2httpd 0.1.0\r\n"
 #define PRINT_LINE_TITLE(str) printf("\n----------------%s----------------\n", str);
 
 #define IO_ERROR -1
 
  //*******************通用性配置********************
- #define PRINT_HADER 1
+#define PRINT_HADER 1
 
 
 //********************通用性链表**********************
@@ -72,23 +72,25 @@ typedef struct node
 }ListNode;
 
 
-typedef int (*FindElemFunc)(ElemType *,void *key);
+typedef int (*FindElemFunc)(ElemType *,ElemType *key);
 
-int ListAppend(ListNode *,ElemType *);
-ElemType *GetElem(ListNode *,FindElemFunc,void *);
-ListNode *NewElemNode();
+int list_append(ListNode *,ElemType *);  //追加元素节点
+ElemType *list_get_by_func(ListNode *,FindElemFunc,ElemType *);  //查找元素
+ListNode *new_list_node();    //新建元素节点
 
-int ListAppend(ListNode *head,ElemType *elem)
+/* 新节点加在head之后 */
+int list_append(ListNode *head,ElemType *elem)
 {
-    ListNode *data;
-    data=NewElemNode();
-    data->data=elem;
-    data->next=head->next;
-    head->next=data;
+    ListNode *node;
+    node=new_list_node();
+    node->data=elem;
+    node->next=head->next;
+    head->next=node;
     return 0;
 }
 
-ElemType *GetElem(ListNode *head,FindElemFunc func,void *key)
+/* 通过自定义函数查找节点 */
+ElemType *list_get_by_func(ListNode *head,FindElemFunc func,void *key)
 {
     ListNode *tmp=head->next;
     if(tmp==NULL)
@@ -102,35 +104,40 @@ ElemType *GetElem(ListNode *head,FindElemFunc func,void *key)
     return NULL;
 }
 
-ListNode *NewElemNode(){
+/* 新建链表节点 */
+ListNode *new_list_node(){
     ListNode *tmp;
     tmp=(ListNode *)malloc(sizeof(ListNode));
     tmp->data=NULL;
     tmp->next=NULL;
     return tmp;
 }
+
 //******************* socket节点 ***********************
 
+/* 请求结构体 */
 typedef struct {
-    char *read_cache;
-    int read_cache_len;
-    char *header_dump;
-    int header_dump_len;
-    char method;
-    char *request_path;
-    long body_len;
+    char *read_cache;       //缓存读取内容
+    int read_cache_len;     //缓存的内容长度
+    char *header_dump;      //缓存请求头
+    int header_dump_len;    //请求头的长度
+    char method;            //请求方法
+    char *request_path;     //请求路径
+    long body_len;          //请求的body长度
 }Req;
 
+/* 响应结构体 */
 typedef struct {
-    long response_cache_len;
-    char *response_path;
+    long response_cache_len;    //响应内容长度
+    char *response_path;        //响应文件路径
 }Resp;
 
+/* socket连接节点 */
 typedef struct sn{
-    int client_fd;
-    char IO_STATUS;
-    Req request;
-    Resp response;
+    int client_fd;          //socket连接描述符
+    char IO_STATUS;         //socket状态
+    Req request;            //socket对应的请求
+    Resp response;          //socket对应的响应
     struct sn *next;
 }SocketNode;
 
@@ -165,7 +172,6 @@ void add_socket_node(SocketNode *head,SocketNode *client) {
 }
 
 void free_socket_node(SocketNode *head,INT_32 client_fd) {
-    
     SocketNode *tmp = head;
     SocketNode *k=NULL;
     //空链表
@@ -175,11 +181,11 @@ void free_socket_node(SocketNode *head,INT_32 client_fd) {
     }
     if (head->client_fd==client_fd) {
         head=head->next;
-        Jmpfree(k->request.read_cache);
-        Jmpfree(k->request.header_dump);
-        Jmpfree(k->request.request_path);
-        Jmpfree(k->response.response_path);
-        Jmpfree(k);
+        free_buf(k->request.read_cache);
+        free_buf(k->request.header_dump);
+        free_buf(k->request.request_path);
+        free_buf(k->response.response_path);
+        free_buf(k);
         close(client_fd);
         return;
     }
@@ -199,11 +205,11 @@ void free_socket_node(SocketNode *head,INT_32 client_fd) {
 
     tmp->next = k->next;
     printf("FREE=ID%d,PATH:%s\n",client_fd,k->request.request_path);
-    Jmpfree(k->request.read_cache);
-    Jmpfree(k->request.header_dump);
-    Jmpfree(k->request.request_path);
-    Jmpfree(k->response.response_path);
-    Jmpfree(k);
+    free_buf(k->request.read_cache);
+    free_buf(k->request.header_dump);
+    free_buf(k->request.request_path);
+    free_buf(k->response.response_path);
+    free_buf(k);
 
     close(client_fd);
     TIP printf("> SOCKET[%d] ready close.\n", client_fd);
@@ -321,7 +327,7 @@ int read_line_more(int client_fd, char *buf, int buffer_size, char **malloc_buff
     int t;
     char *malloc_buf=*malloc_buffer;
     *len=0;
-    //Jmpfree(malloc_buf);
+    //free_buf(malloc_buf);
 
     r = read_line(client_fd, buf, buffer_size, &t);
     if (t == (buffer_size-1) && r == IO_DONE) {
@@ -384,9 +390,9 @@ int handle_error(int client_fd){
         if(PRINT_HADER)
             printf("%s",buffer);
         if (buf.len>buffer_size)
-            Jmpfree(buf.malloc_buf);
+            free_buf(buf.malloc_buf);
     }while(read_line_more(client_fd, buf.buffer, buffer_size, &buf.malloc_buf, &buf.len)==0);
-    Jmpfree(buf.malloc_buf);
+    free_buf(buf.malloc_buf);
     return IO_ERROR;
 }
 
@@ -422,7 +428,7 @@ int request_header_start(int client_fd){
             else{
                 memcpy(buf.buffer, client_sock->request.read_cache, client_sock->request.read_cache_len);
             }
-            Jmpfree(client_sock->request.read_cache);
+            free_buf(client_sock->request.read_cache);
             client_sock->request.read_cache_len=0;
         }
     }
@@ -479,7 +485,7 @@ int request_header_start(int client_fd){
         client_sock->request.header_dump_len=buf.len;
         
         if (buf.len>buffer_size)
-            Jmpfree(buf.malloc_buf);
+            free_buf(buf.malloc_buf);
         client_sock->IO_STATUS=R_HEADER_BODY;
         TIP printf("Request=ID:%d,PATH:%s\n",client_fd,client_sock->request.request_path);
         return IO_DONE;
@@ -490,10 +496,10 @@ int request_header_start(int client_fd){
         client_sock->request.read_cache=(char *)malloc(buf.len);
         memcpy(client_sock->request.read_cache, buffer, buf.len);
         client_sock->request.read_cache_len=buf.len;
-        Jmpfree(buf.malloc_buf);
+        free_buf(buf.malloc_buf);
         return IO_EAGAIN;
     }
-    Jmpfree(buf.malloc_buf);
+    free_buf(buf.malloc_buf);
     return IO_ERROR;
 }
 void handle_header_kv(int client_fd,char *buf,int len){
@@ -524,7 +530,7 @@ int request_header_body(INT_32 client_fd){
     client_sock=find_socket_node(SocketHead,client_fd);
     client_sock->IO_STATUS=R_HEADER_BODY;
     do{
-        Jmpfree(buf.malloc_buf);
+        free_buf(buf.malloc_buf);
         r=read_line_more(client_fd, buf.buffer, buffer_size, &buf.malloc_buf, &buf.len);
 
         //如果已经是当前状态,read_cache内有上次缓存数据
@@ -543,7 +549,7 @@ int request_header_body(INT_32 client_fd){
                 memcpy(buf.buffer, client_sock->request.read_cache, client_sock->request.read_cache_len);
             }
             //清除上次状态
-            Jmpfree(client_sock->request.read_cache);
+            free_buf(client_sock->request.read_cache);
             client_sock->request.read_cache_len=0;
         }
 
@@ -560,7 +566,7 @@ int request_header_body(INT_32 client_fd){
         memcpy(client_sock->request.header_dump+client_sock->request.header_dump_len, buffer, buf.len);
         client_sock->request.header_dump_len+=buf.len;
         if (buf.len>buffer_size)
-            Jmpfree(buf.malloc_buf);
+            free_buf(buf.malloc_buf);
     }while((strcasecmp(buffer, "\n"))&&r==IO_DONE);
 
     if (r==IO_DONE) {
@@ -572,10 +578,10 @@ int request_header_body(INT_32 client_fd){
         client_sock->request.read_cache=(char *)malloc(buf.len);
         memcpy(client_sock->request.read_cache, buffer, buf.len);
         client_sock->request.read_cache_len=buf.len;
-        Jmpfree(buf.malloc_buf);
+        free_buf(buf.malloc_buf);
         return IO_EAGAIN;
     }
-    Jmpfree(buf.malloc_buf);
+    free_buf(buf.malloc_buf);
     return IO_ERROR;
 }
 
@@ -595,7 +601,7 @@ int request_body(INT_32 client_fd){
         return IO_DONE;
     }
     do{
-        Jmpfree(buf.malloc_buf);
+        free_buf(buf.malloc_buf);
         r=read_line_more(client_fd, buf.buffer, buffer_size, &buf.malloc_buf, &buf.len);
 
         //如果已经是当前状态,read_cache内有上次缓存数据
@@ -614,7 +620,7 @@ int request_body(INT_32 client_fd){
                 memcpy(buf.buffer, client_sock->request.read_cache, client_sock->request.read_cache_len);
             }
             //清除上次状态
-            Jmpfree(client_sock->request.read_cache);
+            free_buf(client_sock->request.read_cache);
             client_sock->request.read_cache_len=0;
         }
 
@@ -628,7 +634,7 @@ int request_body(INT_32 client_fd){
         printf("\0");
         fflush(stdout);
         if (buf.len>buffer_size)
-            Jmpfree(buf.malloc_buf);
+            free_buf(buf.malloc_buf);
         //加了一个误差，多余的。
         if (buf.len+5>=client_sock->request.body_len){
             client_sock->IO_STATUS=R_RESPONSE;
@@ -643,7 +649,7 @@ int request_body(INT_32 client_fd){
     //    client_sock->request.read_cache=(char *)malloc(buf.len);
     //    memcpy(client_sock->request.read_cache, buffer, buf.len);
     //    client_sock->request.read_cache_len=buf.len;
-    Jmpfree(buf.malloc_buf);
+    free_buf(buf.malloc_buf);
     return IO_EAGAIN;
 }
 
@@ -743,10 +749,10 @@ URL_ROUTE *new_route_node(char *route_str,RouteFunc func){
 }
 
 void init_route(){
-    head_route=NewElemNode();
-    ListAppend(head_route, new_route_node("/route1", route_func1));
-    ListAppend(head_route, new_route_node("/route2", route_func2));
-    ListAppend(head_route, new_route_node("/echo", route_func3));
+    head_route=new_list_node();
+    list_append(head_route, new_route_node("/route1", route_func1));
+    list_append(head_route, new_route_node("/route2", route_func2));
+    list_append(head_route, new_route_node("/echo", route_func3));
 }
 
 //------------------------------------路由匹配-------------------------------
@@ -754,7 +760,7 @@ void init_route(){
 char *handle_route(SocketNode *client_sock,char *route_key){
     char *resp;
     ElemType *data;
-    data=GetElem(head_route, find_route, route_key);
+    data=list_get_by_func(head_route, find_route, route_key);
     if(data)
     {
         resp=((URL_ROUTE *)data)->func(client_sock);

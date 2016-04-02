@@ -38,3 +38,6 @@ linux-tools
 
 mirror
  http://mirrors.ustc.edu.cn/
+
+IntelliJ IDEA
+ http://idea.lanyus.com/
