@@ -40,7 +40,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <ctype.h>
-#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <stdlib.h>
@@ -55,6 +55,7 @@
 #define free_buf(buf) if(buf){free(buf);buf=NULL;}
 #define SERVER_STRING "Server: jmp2httpd 0.1.0\r\n"
 #define PRINT_LINE_TITLE(str) printf("\n----------------%s----------------\n", str);
+#define PRINT_ERROR(str)      printf("\nERROR: %s;\n",str);
 
 #define IO_ERROR -1
 
@@ -141,6 +142,7 @@ typedef struct sn{
     struct sn *next;
 }SocketNode;
 
+/* new socket节点 */
 SocketNode *new_socket_node() {
     SocketNode *tmp = (SocketNode *) malloc(sizeof(SocketNode));
     memset(tmp, 0, sizeof(SocketNode));
@@ -149,14 +151,13 @@ SocketNode *new_socket_node() {
     return tmp;
 }
 
-
+/* 查找socket描述符节点 */
 SocketNode *find_socket_node(SocketNode *head,INT_32 client_fd) {
     SocketNode *tmp = head;
     if (head == NULL) {
-        printf("! socketheader null\n");
+        PRINT_ERROR("Socket-Head-Node is None");
         exit(1);
     }
-
     do{
         if (tmp->client_fd == client_fd)
             return tmp;
@@ -165,12 +166,13 @@ SocketNode *find_socket_node(SocketNode *head,INT_32 client_fd) {
 
 }
 
+/* 添加节点到Header-Node与其他Node之间 */
 void add_socket_node(SocketNode *head,SocketNode *client) {
-    // 添加节点到HeaderNode与其他Node之间
     client->next = head->next;
     head->next = client;
 }
 
+/* 根据socket描述符释放节点 */
 void free_socket_node(SocketNode *head,INT_32 client_fd) {
     SocketNode *tmp = head;
     SocketNode *k=NULL;
@@ -198,13 +200,13 @@ void free_socket_node(SocketNode *head,INT_32 client_fd) {
     k = tmp->next;
     //没找到node
     if (k == NULL) {
-        printf("! free_socket_nod not found client_fd\n");
+        PRINT_ERROR("socket-node not found for client_fd");
         close(client_fd);
         exit(1);
     }
 
     tmp->next = k->next;
-    printf("FREE=ID%d,PATH:%s\n",client_fd,k->request.request_path);
+    printf("FREE:ID-%d,PATH-%s\n",client_fd,k->request.request_path);
     free_buf(k->request.read_cache);
     free_buf(k->request.header_dump);
     free_buf(k->request.request_path);
@@ -221,13 +223,13 @@ INT_32 set_nonblocking(INT_32 sockfd) {
     INT_32 opts;
     opts = fcntl(sockfd, F_GETFL);
     if (opts < 0) {
-        printf("! fcntl: F_GETFL");
+        PRINT_ERROR("fcntl: F_GETFL");
         return -1;
     }
 
     opts = opts | O_NONBLOCK;
     if (fcntl(sockfd, F_SETFL, opts) < 0) {
-        printf("! fcntl: F_SETFL");
+        PRINT_ERROR("fcntl: F_SETFL");
         return -1;
     }
 
@@ -236,23 +238,25 @@ INT_32 set_nonblocking(INT_32 sockfd) {
 }
 
 SocketNode *SocketHead;
-//保存跟目录
+
+//保存根目录
 char rootpath[256];
 
 INT_32 startup(INT_32 *port) {
     INT_32 httpd = 0;
     struct sockaddr_in server_addr;
     if ((httpd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        printf("! httpd start error.");
+        PRINT_ERROR("httpd start error.");
         exit(1);
     }
 
     INT_32 opt = SO_REUSEADDR;
     if (setsockopt(httpd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1) {
-        perror("! Reuse error.");
+        PRINT_ERROR("Reuse error.");
         exit(1);
     }
 
+    //设置非阻塞
     set_nonblocking(httpd);
 
     SocketNode *tmp = new_socket_node();
@@ -264,12 +268,12 @@ INT_32 startup(INT_32 *port) {
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
     if (bind(httpd, (struct sockaddr *) &server_addr, sizeof(struct sockaddr_in)) == -1) {
-        perror("! Bind error:\n");
+        PRINT_ERROR("Bind error");
         exit(1);
     }
 
     if (listen(httpd, 1024) == -1) {
-        printf("! Listen error.\n");
+        PRINT_ERROR("Listen error");
         exit(1);
     }
     //设置root路径
@@ -279,19 +283,29 @@ INT_32 startup(INT_32 *port) {
 }
 
 //*****************************************  Request模块  ************************************
+
 #define IO_EAGAIN EAGAIN
 #define IO_DONE 0
-//读到buf,返回状态码
+#define IO_LINE_DONE 1
+#define IO_LINE_YET 2
+
+/*
+ * 读到buf,返回状态码
+ * 1. 读取状态码(失败、成功、EAGAIN)
+ * 2. 读取内容长度
+ * 3. 一行数据有没有读取完毕
+*/
 INT_32 read_line(INT_32 sock, char *buf,int BUF_SIZE,int *len) {
     char c='\0' ;
     INT_32 r=0,t=0;
     *len=0;
-    /* 转换/r/n 到 /n */
+    //buf[BUF_SIZE-1] must be '\0'
     while ((t < BUF_SIZE - 1) && (c != '\n')) {
         r = recv(sock, &c, 1, 0);
         if (r > 0) {
+            // 判断下一个符号是否是\r，如果是则表明为\r\n结束符
             if (c == '\r') {
-                /* 从缓冲区copy数据，并不删除数据，如果符合再次读取数据 */
+                // MSG_PEEK:从缓冲区copy数据，并不删除数据，如果符合再次读取数据
                 r = recv(sock, &c, 1, MSG_PEEK);
                 if (r > 0 && c == '\n')
                     recv(sock, &c, 1, 0);
@@ -304,64 +318,76 @@ INT_32 read_line(INT_32 sock, char *buf,int BUF_SIZE,int *len) {
         else
             break;
     }
-    buf[t]='\0';
+
+    buf[t++]='\0';
     *len=t;
+
     if (r < 0) {
+        // 缓冲区为空,读取失败
         if (errno == EAGAIN) {
             return IO_EAGAIN;
         }
         else {
-            perror("! get_line error");
+            PRINT_ERROR("get_line");
             return IO_ERROR;
         }
     }
     else if(r>0)
-        return IO_DONE;
+            return IO_LINE_DONE;
     return IO_ERROR;
 }
 
 //读取一行无论数据有多长
-int read_line_more(int client_fd, char *buf, int buffer_size, char **malloc_buffer, int *len) {
+int read_line_more(int client_fd, char **malloc_buffer, int *len) {
     int r;
     int n = 0;
     int t;
-    char *malloc_buf=*malloc_buffer;
+    char *malloc_buf=NULL;
+    int BUF_SIZE=1024;
+    char buf[BUF_SIZE];
+
+    memset(buf, 0, BUF_SIZE);
     *len=0;
-    //free_buf(malloc_buf);
 
-    r = read_line(client_fd, buf, buffer_size, &t);
-    if (t == (buffer_size-1) && r == IO_DONE) {
-        malloc_buf = (char *) malloc(sizeof(char) * (buffer_size - 1));
-        memcpy(malloc_buf + n, buf, t);
-        n=t;
-        do{
-            r=read_line(client_fd, buf, buffer_size, &t);
+    r = read_line(client_fd, buf, BUF_SIZE, &t);
+
+    /*
+     * 读取流程:
+     * 读取一行(buf_size=1024)
+     * 拷贝到buf
+     * >进行状态判断
+     * 1. 最后字符!='\n',且读取状态为IO_LINE_DONE
+     *      重新读取
+     * 2. 读取错误IO_EAGAIN || IO_ERROR
+     *      返回buf+状态码
+     * 3. 最后字符为'\n'
+     *      读取完毕，返回返回buf+状态码
+     */
+   while(1){
+        if(!malloc_buf)
+            malloc_buf = (char *) malloc(sizeof(char) * t);
+        else
             malloc_buf = (char *) realloc(malloc_buf, (n + t) * sizeof(char));
-            memcpy(malloc_buf + n, buf, t);
-            n += t;
+        memcpy(malloc_buf + n, buf, t);
+        n += t;
+        if(buf[t-1-1]!='\n' && r == IO_LINE_DONE ) {
+           r=read_line(client_fd, buf, BUF_SIZE, &t);
+        }
+        else if(buf[t-1-1]=='\n' && r == IO_LINE_DONE)
+        {
+            *len=n;
+            *malloc_buffer=malloc_buf;
+            return r;
+        }
+        else if(r == IO_ERROR || r== IO_EAGAIN)
+        {
+            *len=n;
+            *malloc_buffer=malloc_buf;
+            return r;
+        }
 
-        }while ((r== IO_DONE) && t == (buffer_size - 1));
-    }
-
-    if(n==0)
-        *len=t;
-    else
-    {
-        *len=n;
-        *malloc_buffer=malloc_buf;
-    }
-    if(r==IO_DONE)
-        return IO_DONE;
-    else if(r==IO_EAGAIN)
-        return IO_EAGAIN;
-    return IO_ERROR;
-
+   }
 }
-typedef struct{
-    char buffer[1024];
-    int len;
-    char *malloc_buf;
-}JmpBuffer;
 
 #define M_GET 1
 #define M_POST 2
@@ -376,23 +402,15 @@ typedef struct{
 
 
 int handle_error(int client_fd){
-    int buffer_size=1024;
-    JmpBuffer buf;
-    int r;
-    char *buffer;
-    read_line_more(client_fd, buf.buffer, buffer_size, &buf.malloc_buf, &buf.len);
+    char *malloc_buf;
+    int len;
+    read_line_more(client_fd, &malloc_buf, &len);
     do{
-        if (buf.len>buffer_size)
-            buffer=buf.malloc_buf;
-        else
-            buffer=buf.buffer;
-        
         if(PRINT_HADER)
-            printf("%s",buffer);
-        if (buf.len>buffer_size)
-            free_buf(buf.malloc_buf);
-    }while(read_line_more(client_fd, buf.buffer, buffer_size, &buf.malloc_buf, &buf.len)==0);
-    free_buf(buf.malloc_buf);
+            printf("%s",malloc_buf);
+        free_buf(malloc_buf);
+    }while(read_line_more(client_fd, &malloc_buf, &len)==IO_LINE_DONE);
+    free_buf(malloc_buf);
     return IO_ERROR;
 }
 
@@ -401,53 +419,49 @@ int request_header_start(int client_fd){
     int buffer_size=1024;
     int r;
     int i,j;
-    char *buffer;
     char tmp_buf[1024];
-    JmpBuffer buf;
-    buf.malloc_buf=NULL;
+    char *malloc_buf=NULL;
+    int len;
     SocketNode *client_sock;
+
     client_sock=find_socket_node(SocketHead,client_fd);
     client_sock->IO_STATUS=R_HEADER_START;
 
-    r=read_line_more(client_fd, buf.buffer, buffer_size, &buf.malloc_buf, &buf.len);
-    if (buf.len==0)
-        return IO_ERROR;
+    r=read_line_more(client_fd, &malloc_buf, &len);
+    if (r!=IO_LINE_DONE)
+        return r;
     //如果已经是当前状态,read_cache内有上次缓存数据
     if(client_sock->IO_STATUS==R_HEADER_START){
         if(client_sock->request.read_cache_len){
-            if (buf.len>(buffer_size-1)) {
-                buf.malloc_buf=(char *)realloc(buf.malloc_buf, (client_sock->request.read_cache_len+buf.len));
-                memcpy(buf.malloc_buf+buf.len,client_sock->request.read_cache,client_sock->request.read_cache_len);
-                buf.len=client_sock->request.read_cache_len+buf.len;
+            client_sock->request.read_cache=(char *)realloc(client_sock->request.read_cache, (client_sock->request.read_cache_len+len));
+            memcpy(client_sock->request.read_cache+client_sock->request.read_cache_len,malloc_buf,client_sock->request.read_cache_len);
+            client_sock->request.read_cache_len+=len;
+            if (r==IO_EAGAIN)
+            {
+                free_buf(malloc_buf);
+                return IO_EAGAIN;
             }
-            else if(client_sock->request.read_cache_len+buf.len>(buffer_size-1)) {
-                buf.malloc_buf=(char *)malloc(client_sock->request.read_cache_len+buf.len);
-                memcpy(buf.malloc_buf,buf.buffer,buf.len);
-                memcpy(buf.malloc_buf, client_sock->request.read_cache, client_sock->request.read_cache_len);
-            }
-            else{
-                memcpy(buf.buffer, client_sock->request.read_cache, client_sock->request.read_cache_len);
-            }
-            free_buf(client_sock->request.read_cache);
+            free_buf(malloc_buf);
+            malloc_buf=client_sock->request.read_cache;
+            len=client_sock->request.read_cache_len;
+            client_sock->request.read_cache=NULL;
             client_sock->request.read_cache_len=0;
         }
     }
 
-    
-    if (buf.len>buffer_size)
-        buffer=buf.malloc_buf;
-    else
-        buffer=buf.buffer;
-    if (r==IO_DONE) {
+
+    if (r==IO_LINE_DONE) {
         i = j = 0;
-        while (!(is_space(buffer[j])) && i < buffer_size) {
-            tmp_buf[i] = buffer[j];
+        while (!(is_space(malloc_buf[j])) && i < len) {
+            tmp_buf[i] = malloc_buf[j];
             i++;
             j++;
         }
         tmp_buf[i] = '\0';
         if (strcasecmp(tmp_buf, "GET") && strcasecmp(tmp_buf, "POST")) {
-            printf("! ERROR-BUFFER:\n%s",buffer);
+            free_buf(malloc_buf);
+            len=0;
+            printf("! ERROR-BUFFER:\n%s",malloc_buf);
             return handle_error(client_fd);
             //exit(1);
         }
@@ -457,14 +471,13 @@ int request_header_start(int client_fd){
             client_sock->request.method = M_POST;
         else
             client_sock->request.method=M_ERROR;
-        
-        while (is_space(buffer[j]) && (j < buffer_size))
+        while (is_space(malloc_buf[j]) && (j < buffer_size))
             j++;
 
         //设置请求路径
         i = 0;
-        while (!is_space(buffer[j]) && (j < buffer_size) && (buffer[i]!='?')) {
-            tmp_buf[i] = buffer[j];
+        while (!is_space(malloc_buf[j]) && (j < len) && (malloc_buf[i]!='?')) {
+            tmp_buf[i] = malloc_buf[j];
             i++;
             j++;
         }
@@ -472,34 +485,24 @@ int request_header_start(int client_fd){
         //sprintf(request_path, "%s/htdocs%s", rootpath, url);
         client_sock->request.request_path = (char *) malloc((i + 1) * sizeof(char));
         //tmp->Header.request_path[strlen(request_path)] = '\0';
-
         memcpy(client_sock->request.request_path, tmp_buf,i+1);
 
         //打印，保存到header_dump
         //PRINT_LINE_TITLE("header-start");
         if(PRINT_HADER)
-            printf("%s",buffer);
+            printf("%s",malloc_buf);
 
-        client_sock->request.header_dump=(char *)malloc(buf.len);
-        memcpy(client_sock->request.header_dump+client_sock->request.header_dump_len, buffer, buf.len);
-        client_sock->request.header_dump_len=buf.len;
-        
-        if (buf.len>buffer_size)
-            free_buf(buf.malloc_buf);
+        client_sock->request.header_dump=(char *)malloc(len-1);
+        memcpy(client_sock->request.header_dump+client_sock->request.header_dump_len, malloc_buf, len-1);
+        client_sock->request.header_dump_len+=len-1;
+
         client_sock->IO_STATUS=R_HEADER_BODY;
+        free_buf(malloc_buf);
+        len=0;
         TIP printf("Request=ID:%d,PATH:%s\n",client_fd,client_sock->request.request_path);
         return IO_DONE;
-
     }
-    else if(r==IO_EAGAIN){
-        client_sock->IO_STATUS=R_HEADER_START;
-        client_sock->request.read_cache=(char *)malloc(buf.len);
-        memcpy(client_sock->request.read_cache, buffer, buf.len);
-        client_sock->request.read_cache_len=buf.len;
-        free_buf(buf.malloc_buf);
-        return IO_EAGAIN;
-    }
-    free_buf(buf.malloc_buf);
+    free_buf(malloc_buf);
     return IO_ERROR;
 }
 void handle_header_kv(int client_fd,char *buf,int len){
@@ -519,69 +522,67 @@ void handle_header_kv(int client_fd,char *buf,int len){
         client_sock->request.body_len=atol(buf+i);
     }
 }
+/*
+ *  请求header的处理流程:
+ */
 int request_header_body(INT_32 client_fd){
     int buffer_size=1024;
     int r;
     int i;
-    char *buffer;
-    JmpBuffer buf;
-    buf.malloc_buf=NULL;
+    char *malloc_buf=NULL;
+    int len=0;
     SocketNode *client_sock;
+
     client_sock=find_socket_node(SocketHead,client_fd);
     client_sock->IO_STATUS=R_HEADER_BODY;
     do{
-        free_buf(buf.malloc_buf);
-        r=read_line_more(client_fd, buf.buffer, buffer_size, &buf.malloc_buf, &buf.len);
+        free_buf(malloc_buf);
+        r=read_line_more(client_fd, &malloc_buf, &len);
 
         //如果已经是当前状态,read_cache内有上次缓存数据
         if(client_sock->request.read_cache_len){
-            if (buf.len>(buffer_size-1)) {
-                buf.malloc_buf=(char *)realloc(buf.malloc_buf, (client_sock->request.read_cache_len+buf.len));
-                memcpy(buf.malloc_buf+buf.len,client_sock->request.read_cache,client_sock->request.read_cache_len);
-                buf.len=client_sock->request.read_cache_len+buf.len;
+            client_sock->request.read_cache=(char *)realloc(client_sock->request.read_cache, (client_sock->request.read_cache_len+len));
+            memcpy(client_sock->request.read_cache+client_sock->request.read_cache_len,malloc_buf,client_sock->request.read_cache_len);
+            client_sock->request.read_cache_len+=len;
+            if (r==IO_EAGAIN)
+            {
+                free_buf(malloc_buf);
+                return IO_EAGAIN;
             }
-            else if(client_sock->request.read_cache_len+buf.len>(buffer_size-1)) {
-                buf.malloc_buf=(char *)malloc(client_sock->request.read_cache_len+buf.len);
-                memcpy(buf.malloc_buf,buf.buffer,buf.len);
-                memcpy(buf.malloc_buf, client_sock->request.read_cache, client_sock->request.read_cache_len);
-            }
-            else{
-                memcpy(buf.buffer, client_sock->request.read_cache, client_sock->request.read_cache_len);
-            }
-            //清除上次状态
-            free_buf(client_sock->request.read_cache);
+            free_buf(malloc_buf);
+            malloc_buf=client_sock->request.read_cache;
+            len=client_sock->request.read_cache_len;
+            client_sock->request.read_cache=NULL;
             client_sock->request.read_cache_len=0;
         }
-
-
-        if (buf.len>buffer_size)
-            buffer=buf.malloc_buf;
-        else
-            buffer=buf.buffer;
-
-        handle_header_kv(client_fd, buffer, buf.len);
+        
+        //缓存区为空
+        if (r==IO_EAGAIN)
+        {
+            client_sock->request.read_cache=(char *)realloc(client_sock->request.read_cache, (client_sock->request.read_cache_len+len));
+            memcpy(client_sock->request.read_cache+client_sock->request.read_cache_len,malloc_buf,client_sock->request.read_cache_len);
+            client_sock->request.read_cache_len+=len;
+            free_buf(malloc_buf);
+            client_sock->IO_STATUS=R_BODY;
+            return IO_EAGAIN;
+        }
+        
+        handle_header_kv(client_fd, malloc_buf, len);
         if(PRINT_HADER)
-            printf("%s",buffer);
-        client_sock->request.header_dump=(char *)realloc(client_sock->request.header_dump,buf.len+client_sock->request.header_dump_len+1);
-        memcpy(client_sock->request.header_dump+client_sock->request.header_dump_len, buffer, buf.len);
-        client_sock->request.header_dump_len+=buf.len;
-        if (buf.len>buffer_size)
-            free_buf(buf.malloc_buf);
-    }while((strcasecmp(buffer, "\n"))&&r==IO_DONE);
-
-    if (r==IO_DONE) {
+            printf("%s",malloc_buf);
+        if(client_sock->request.header_dump)
+        {
+            client_sock->request.header_dump=(char *)realloc(client_sock->request.header_dump,len+client_sock->request.header_dump_len-1);
+            memcpy(client_sock->request.header_dump+client_sock->request.header_dump_len, malloc_buf, len-1);
+            client_sock->request.header_dump_len+=len-1;
+        }
+    }while((strcasecmp(malloc_buf, "\n"))&&r==IO_LINE_DONE);
+    free_buf(malloc_buf);
+    if(r==IO_LINE_DONE)
+    {
         client_sock->IO_STATUS=R_BODY;
         return IO_DONE;
     }
-    else if(r==IO_EAGAIN){
-        client_sock->IO_STATUS=R_HEADER_BODY;
-        client_sock->request.read_cache=(char *)malloc(buf.len);
-        memcpy(client_sock->request.read_cache, buffer, buf.len);
-        client_sock->request.read_cache_len=buf.len;
-        free_buf(buf.malloc_buf);
-        return IO_EAGAIN;
-    }
-    free_buf(buf.malloc_buf);
     return IO_ERROR;
 }
 
@@ -589,9 +590,9 @@ int request_header_body(INT_32 client_fd){
 int request_body(INT_32 client_fd){
     int buffer_size=1024;
     int r;
+    char *malloc_buf=NULL;
+    int len=0;
     char *buffer;
-    JmpBuffer buf;
-    buf.malloc_buf=NULL;
     SocketNode *client_sock;
     client_sock=find_socket_node(SocketHead,client_fd);
     client_sock->IO_STATUS=R_BODY;
@@ -601,56 +602,50 @@ int request_body(INT_32 client_fd){
         return IO_DONE;
     }
     do{
-        free_buf(buf.malloc_buf);
-        r=read_line_more(client_fd, buf.buffer, buffer_size, &buf.malloc_buf, &buf.len);
+        free_buf(malloc_buf);
+        r=read_line_more(client_fd, &malloc_buf, &len);
 
         //如果已经是当前状态,read_cache内有上次缓存数据
         if(client_sock->request.read_cache_len){
-            if (buf.len>(buffer_size-1)) {
-                buf.malloc_buf=(char *)realloc(buf.malloc_buf, (client_sock->request.read_cache_len+buf.len));
-                memcpy(buf.malloc_buf+buf.len,client_sock->request.read_cache,client_sock->request.read_cache_len);
-                buf.len=client_sock->request.read_cache_len+buf.len;
+            client_sock->request.read_cache=(char *)realloc(client_sock->request.read_cache, (client_sock->request.read_cache_len+len));
+            memcpy(client_sock->request.read_cache+client_sock->request.read_cache_len,malloc_buf,client_sock->request.read_cache_len);
+            client_sock->request.read_cache_len+=len;
+            if (r==IO_EAGAIN)
+            {
+                free_buf(malloc_buf);
+                client_sock->IO_STATUS=R_BODY;
+                return IO_EAGAIN;
             }
-            else if(client_sock->request.read_cache_len+buf.len>(buffer_size-1)) {
-                buf.malloc_buf=(char *)malloc(client_sock->request.read_cache_len+buf.len);
-                memcpy(buf.malloc_buf,buf.buffer,buf.len);
-                memcpy(buf.malloc_buf, client_sock->request.read_cache, client_sock->request.read_cache_len);
-            }
-            else{
-                memcpy(buf.buffer, client_sock->request.read_cache, client_sock->request.read_cache_len);
-            }
-            //清除上次状态
-            free_buf(client_sock->request.read_cache);
+            free_buf(malloc_buf);
+            malloc_buf=client_sock->request.read_cache;
+            len=client_sock->request.read_cache_len;
+            client_sock->request.read_cache=NULL;
             client_sock->request.read_cache_len=0;
         }
 
-        if (buf.len>buffer_size)
-            buffer=buf.malloc_buf;
-        else
-            buffer=buf.buffer;
+        //缓存区为空
+        if (r==IO_EAGAIN)
+        {
+            client_sock->request.read_cache=(char *)realloc(client_sock->request.read_cache, (client_sock->request.read_cache_len+len));
+            memcpy(client_sock->request.read_cache+client_sock->request.read_cache_len,malloc_buf,client_sock->request.read_cache_len);
+            client_sock->request.read_cache_len+=len;
+            free_buf(malloc_buf);
+            client_sock->IO_STATUS=R_BODY;
+            return IO_EAGAIN;
+        }
 
-        buf.buffer[buf.len]='\0';
+        malloc_buf[len]='\0';
         TIP printf("%s",buffer);
         printf("\0");
         fflush(stdout);
-        if (buf.len>buffer_size)
-            free_buf(buf.malloc_buf);
         //加了一个误差，多余的。
-        if (buf.len+5>=client_sock->request.body_len){
+        if (len+5>=client_sock->request.body_len){
             client_sock->IO_STATUS=R_RESPONSE;
             return IO_DONE;
         }
-    }while(r==IO_DONE);
-    
-    if (r==IO_ERROR) {
-        return IO_ERROR;
-    }
-    client_sock->IO_STATUS=R_BODY;
-    //    client_sock->request.read_cache=(char *)malloc(buf.len);
-    //    memcpy(client_sock->request.read_cache, buffer, buf.len);
-    //    client_sock->request.read_cache_len=buf.len;
-    free_buf(buf.malloc_buf);
-    return IO_EAGAIN;
+    }while(r==IO_LINE_DONE);
+    free_buf(malloc_buf);
+    return IO_ERROR;
 }
 
 int handle_request(int client_fd){
@@ -670,7 +665,6 @@ int handle_request(int client_fd){
             }
             else if(r==IO_ERROR)
                 return IO_ERROR;
-            
         }
         case R_HEADER_BODY:
         {
@@ -832,7 +826,7 @@ int handle_response(int client_fd){
         }
     }
     else{
-        printf("! socket 状态码错误.\n");
+        PRINT_ERROR("! socket 状态码错误");
     }
     return IO_DONE;
 }
@@ -911,7 +905,7 @@ INT_32 send_file(INT_32 client_fd,char *file_path,long *len) {
                 return IO_EAGAIN;
             }
             else {
-                printf("! Send Error:");
+                PRINT_ERROR("Send Error:");
                 fclose(fd);
                 return IO_ERROR;
             }
@@ -987,7 +981,6 @@ void select_loop(INT_32 httpd){
                 {
                     inet_ntop(AF_INET, &(client_addr.sin_addr), ipaddr, 32 * sizeof(char));
                     printf("> SOCKET[%d] Accept : %s\n", client_fd, ipaddr);
-                    
                     set_nonblocking(client_fd);
                     SocketNode *tmp = new_socket_node();
                     tmp->client_fd = client_fd;
