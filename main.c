@@ -14,7 +14,7 @@ int main(int argc, const char * argv[]) {
     /* struct sockaddr_in server_addr = {0}; */
     int port;
     INT_32 httpd;
-    if( argc <= 2)
+    if( argc < 2)
     {
         printf("usage: %s need port\n",basename(argv[0]));
     }
