@@ -11,13 +11,14 @@
 #include <sys/errno.h>
 #include <ctype.h>
 #include <sys/stat.h>
+#include "typedata.h"
 
 #define IO_ERROR -1
 
 #define IO_EAGAIN EAGAIN
 #define IO_DONE 0
 #define IO_LINE_DONE 1
-#define IO_LINE_YET 2
+#define IO_LINE_NOT_DONE 2
 
 #define M_GET 1
 #define M_POST 2
@@ -31,5 +32,8 @@
 #define RESPONSE 5
 
 #define is_space(x) isspace((int)(x))
-
+void set_nonblocking(int sockfd);
+ServerInfo *startup(int *port);
+int handle_request(SocketNode *client_sock);
+int handle_response(SocketNode *client_sock, ServerInfo *httpd);
 #endif //HTTPDTMP_UTILS_H

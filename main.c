@@ -2,24 +2,48 @@
 // Created by jmpews on 16/7/11.
 //
 #include "main.h"
-#include "utils.c"
-#include "typedata.h"
+#include "utils.h"
 #include <libgen.h>
+
+#include <getopt.h>
+static struct option longopts[] = {
+    { "port",       required_argument,      NULL,           'p' },
+    { "header",     no_argument,            NULL,           'e' },
+    { "body",       no_argument,            NULL,           'b' },
+    { "tips",       no_argument,            NULL,           't' },
+    { "help",       no_argument,            NULL,           'h' },
+    { NULL,         0,                      NULL,           0 }
+};
+
 
 void select_loop(ServerInfo *httpd);
 
 int main(int argc, const char *argv[]) {
 
-    /* struct sockaddr_in server_addr = {0}; */
-    int port;
+    int opt;
+    int port = 8000;
     ServerInfo *httpd;
-    if (argc < 2) {
-        printf("usage: %s need port\n", basename(argv[0]));
+
+    while((opt = getopt_long_only(argc, argv, "p:ebdh", longopts, NULL)) != -1) {
+        switch (opt) {
+            case 'p':
+                port = atoi(optarg);
+                break;
+            case 'e':
+                debug_header = 1;
+                break;
+            case 'b':
+                debug_body= 1;
+                break;
+            case 't':
+                debug_tips = 1;
+                break;
+            default:
+                printf("usage:\n--port 'listen port'\n--header 'debug show header'\n--body 'debug show body'\n--tips 'debug show tips'\n");
+        }
     }
-    //port=atoi(argv[1]);
-    port = 8000;
-    //if((httpd=startup(&port))==-1)
-    if ((httpd = startup(&port)) == NULL) {
+    httpd = startup(&port);
+    if (httpd == NULL) {
         printf("ERROR: init socket() error.\n");
         exit(1);
     }
@@ -77,7 +101,7 @@ void select_loop(ServerInfo *httpd) {
         tv.tv_sec = 5;
         tv.tv_usec = 0;
         r = select(maxfd + 2, &tmp_read_fds, &tmp_write_fds, &tmp_exception_fds, &tv);
-        if (r <= 0)
+        if (r < 0)
             perror("ERROR: select() error.");
         else {
             if (FD_ISSET(server_fd, &tmp_read_fds)) {
@@ -111,7 +135,7 @@ void select_loop(ServerInfo *httpd) {
                                 continue;
                             }
                             //read data or close connect
-                            client_sock=find_socket_node(httpd->head_node,client_fd);
+                            client_sock=find_socket_node(httpd->head_node,i);
                             r = handle_request(client_sock);
                             if (r == IO_DONE) {
                                 FD_CLR(i, &read_fds);

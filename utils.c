@@ -3,7 +3,7 @@
 //
 
 #include "utils.h"
-#include "typedata.c"
+#include "typedata.h"
 
 //*****************************************  服务器初始化模块  ************************************
 
@@ -75,12 +75,12 @@ ServerInfo *startup(int *port) {
  * 2. 读取内容长度
  * 3. 一行数据有没有读取完毕
 */
-int read_line(int sock, char *buf, int BUF_SIZE, int *len) {
+int read_line(int sock, char *buffer, int size, int *len) {
     char c = '\0';
     int r = 0, t = 0;
     *len = 0;
     //buf[BUF_SIZE-1] must be '\0'
-    while ((t < BUF_SIZE - 1) && (c != '\n')) {
+    while ((t < size - 1) && (c != '\n')) {
         r = recv(sock, &c, 1, 0);
         if (r > 0) {
             // 判断下一个符号是否是\r，如果是则表明为\r\n结束符
@@ -92,14 +92,14 @@ int read_line(int sock, char *buf, int BUF_SIZE, int *len) {
                 else
                     c = '\n';
             }
-            buf[t] = c;
+            buffer[t] = c;
             t++;
         }
         else
             break;
     }
 
-    buf[t++] = '\0';
+    buffer[t++] = '\0';
     *len = t;
 
     if (r < 0) {
@@ -112,24 +112,29 @@ int read_line(int sock, char *buf, int BUF_SIZE, int *len) {
             return IO_ERROR;
         }
     }
-    else if (r > 0)
+    else if (c == '\n')
         return IO_LINE_DONE;
-    return IO_ERROR;
+	else
+		return IO_LINE_NOT_DONE;
 }
 
 //读取一行无论数据有多长
+/*
+ * @malloc_buffer 读取内容
+ *
+ */
 int read_line_more(int client_fd, char **malloc_buffer, int *len) {
     int r;
     int n = 0;
     int t;
-    char *malloc_buf = NULL;
-    int BUF_SIZE = 1024;
-    char buf[BUF_SIZE];
+    char *temp_buffer = NULL;
+    int buffer_size = 1024;
+    char buf[buffer_size];
 
-    memset(buf, 0, BUF_SIZE);
+    memset(buf, 0, buffer_size);
     *len = 0;
 
-    r = read_line(client_fd, buf, BUF_SIZE, &t);
+    r = read_line(client_fd, buf, buffer_size, &t);
 
     /*
      * 读取流程:
@@ -143,27 +148,35 @@ int read_line_more(int client_fd, char **malloc_buffer, int *len) {
      * 3. 最后字符为'\n'
      *      读取完毕，返回返回buf+状态码
      */
-    while (1) {
-        if (!malloc_buf)
-            malloc_buf = (char *) malloc(sizeof(char) * t);
+    while (1 && t > 1) {
+        if (!temp_buffer)
+            temp_buffer = (char *) malloc(sizeof(char) * t);
         else
-            malloc_buf = (char *) realloc(malloc_buf, (n + t) * sizeof(char));
-        memcpy(malloc_buf + n, buf, t);
+            temp_buffer = (char *) realloc(temp_buffer, (n + t) * sizeof(char));
+        memcpy(temp_buffer + n, buf, t);
         n += t;
-        if (buf[t - 1 - 1] != '\n' && r == IO_LINE_DONE) {
-            r = read_line(client_fd, buf, BUF_SIZE, &t);
+		// 一行没有读完,double check，其实多余
+        if (buf[t - 1 - 1] != '\n' && r == IO_LINE_NOT_DONE) {
+            r = read_line(client_fd, buf, buffer_size, &t);
         }
+		// 一行读完
         else if (buf[t - 1 - 1] == '\n' && r == IO_LINE_DONE) {
             *len = n;
-            *malloc_buffer = malloc_buf;
+            *malloc_buffer = temp_buffer;
             return r;
         }
-        else if (r == IO_ERROR || r == IO_EAGAIN) {
+		// 需要重新挂起等待
+        else if (r == IO_EAGAIN) {
             *len = n;
-            *malloc_buffer = malloc_buf;
+            *malloc_buffer = temp_buffer;
             return r;
         }
+		else {
+			printf("ERROR: unknown error at read_line_more\n");
+			exit(1);
+		}
     }
+    return r;
 }
 
 
@@ -179,7 +192,30 @@ int handle_error(int client_fd) {
     free_buf(malloc_buf);
     return IO_ERROR;
 }
+void handle_eagain_cache(SocketNode *client_sock, int r, char *malloc_buf, int len)  {
+    // 如果read_line_more 读取数据，遇到EAGAIN，需要保存cache，需要加上之前的cache
+    // 如果read_line_more 读取数据，遇到IO_LINE_DONE，表明读取完毕，查看之前是否有cache，需要加上之前的cache
+    if( (r== IO_EAGAIN && len >1) || (r == IO_LINE_DONE && client_sock->request.read_cache > 0)){
+        client_sock->request.read_cache = (char *) realloc(client_sock->request.read_cache,
+                                                       (client_sock->request.read_cache_len + len));
+        memcpy(client_sock->request.read_cache + client_sock->request.read_cache_len, malloc_buf,
+           client_sock->request.read_cache_len);
+        client_sock->request.read_cache_len += len;
+        free(malloc_buf);
 
+    } else {
+        client_sock->request.read_cache = malloc_buf;
+        client_sock->request.read_cache_len = len;
+    }
+}
+
+void save_header_dump(SocketNode *client_sock) {
+    client_sock->request.header_dump = (char *) realloc(client_sock->request.header_dump,client_sock->request.read_cache_len + client_sock->request.header_dump_len - 1);
+    memcpy(client_sock->request.header_dump + client_sock->request.header_dump_len, client_sock->request.read_cache, client_sock->request.read_cache_len - 1);
+    client_sock->request.header_dump_len += client_sock->request.read_cache_len - 1;
+    free_buf(client_sock->request.read_cache);
+    client_sock->request.read_cache_len = 0;
+}
 //处理请求的第一行,获取请求方法,请求路径
 int request_header_start(int client_fd, SocketNode *client_sock) {
     int buffer_size = 1024;
@@ -194,28 +230,16 @@ int request_header_start(int client_fd, SocketNode *client_sock) {
     }
     // read_cache内有上次缓存数据
     // 状态为IO_EAGAIN,表明缓冲区还有数据
+    handle_eagain_cache(client_sock, r, malloc_buf, len);
+    malloc_buf = client_sock->request.read_cache;
+    len = client_sock->request.read_cache_len;
     if (client_sock->IO_STATUS == R_HEADER_START) {
         if (r == IO_EAGAIN) {
-            //添加到read_cache
-            client_sock->request.read_cache = (char *) realloc(client_sock->request.read_cache,
-                                                               (client_sock->request.read_cache_len + len));
-            memcpy(client_sock->request.read_cache + client_sock->request.read_cache_len, malloc_buf,
-                   client_sock->request.read_cache_len);
-            client_sock->request.read_cache_len += len;
-            free_buf(malloc_buf);
             return IO_EAGAIN;
         }
     }
 
-
     if (r == IO_LINE_DONE) {
-        // 缓冲区有数据
-        if (client_sock->request.read_cache > 0) {
-            malloc_buf = client_sock->request.read_cache;
-            len = client_sock->request.read_cache_len;
-            client_sock->request.read_cache = NULL;
-            client_sock->request.read_cache_len = 0;
-        }
         // 设置下一个状态
         client_sock->IO_STATUS = R_HEADER_BODY;
 
@@ -257,16 +281,11 @@ int request_header_start(int client_fd, SocketNode *client_sock) {
         if (1)
             printf("%s", malloc_buf);
 
-        client_sock->request.header_dump = (char *) malloc(len - 1);
-        memcpy(client_sock->request.header_dump + client_sock->request.header_dump_len, malloc_buf, len - 1);
-        client_sock->request.header_dump_len += len - 1;
+        save_header_dump(client_sock);
 
-        client_sock->IO_STATUS = R_HEADER_BODY;
-        free_buf(malloc_buf);
         printf("DEBUG: [socket-node-%d],detial={path:%s}\n", client_fd, client_sock->request.request_path);
         return IO_DONE;
     }
-    free_buf(malloc_buf);
     return IO_ERROR;
 }
 
@@ -294,46 +313,34 @@ int request_header_body(int client_fd, SocketNode *client_sock) {
     char *malloc_buf = NULL;
     do {
         len = 0;
-        free_buf(malloc_buf);
+        malloc_buf = NULL;
         r = read_line_more(client_fd, &malloc_buf, &len);
         if (r == IO_ERROR) {
             printf("ERROR: request_header_body...\n");
             exit(1);
         }
-
-        //如果已经是当前状态,read_cache内有上次缓存数据
+        
+        // read_cache内有上次缓存数据
+        // 状态为IO_EAGAIN,表明缓冲区还有数据
+        handle_eagain_cache(client_sock, r, malloc_buf, len);
+        malloc_buf = client_sock->request.read_cache;
+        len = client_sock->request.read_cache_len;
         if (client_sock->IO_STATUS == R_HEADER_BODY) {
             if (r == IO_EAGAIN) {
-                client_sock->request.read_cache = (char *) realloc(client_sock->request.read_cache,
-                                                                   (client_sock->request.read_cache_len + len));
-                memcpy(client_sock->request.read_cache + client_sock->request.read_cache_len, malloc_buf,
-                       client_sock->request.read_cache_len);
-                client_sock->request.read_cache_len += len;
-                free_buf(malloc_buf);
                 return IO_EAGAIN;
             }
         }
 
 
         if (r == IO_LINE_DONE) {
-            // 缓冲区有数据
-            if (client_sock->request.read_cache > 0) {
-                malloc_buf = client_sock->request.read_cache;
-                len = client_sock->request.read_cache_len;
-                client_sock->request.read_cache = NULL;
-                client_sock->request.read_cache_len = 0;
-            }
             handle_header_kv(client_fd, malloc_buf, len, client_sock);
         }
         if (1)
             printf("%s", malloc_buf);
         // 保存整个header
-        client_sock->request.header_dump = (char *) realloc(client_sock->request.header_dump,
-                                                            len + client_sock->request.header_dump_len - 1);
-        memcpy(client_sock->request.header_dump + client_sock->request.header_dump_len, malloc_buf, len - 1);
-        client_sock->request.header_dump_len += len - 1;
+        save_header_dump(client_sock);
     } while ((strcasecmp(malloc_buf, "\n")) && r == IO_LINE_DONE);
-    free_buf(malloc_buf);
+
     // 设置下一个状态
     client_sock->IO_STATUS = R_BODY;
     return IO_DONE;
@@ -359,27 +366,20 @@ int request_body(int client_fd, SocketNode *client_sock) {
             printf("ERROR: request_header_body...\n");
             exit(1);
         }
-        //如果已经是当前状态,read_cache内有上次缓存数据
+        // read_cache内有上次缓存数据
+        // 状态为IO_EAGAIN,表明缓冲区还有数据
+        handle_eagain_cache(client_sock, r, malloc_buf, len);
+        malloc_buf = client_sock->request.read_cache;
+        len = client_sock->request.read_cache_len;
         if (client_sock->IO_STATUS == R_BODY) {
             if (r == IO_EAGAIN) {
-                client_sock->request.read_cache = (char *) realloc(client_sock->request.read_cache,
-                                                                   (client_sock->request.read_cache_len + len));
-                memcpy(client_sock->request.read_cache + client_sock->request.read_cache_len, malloc_buf,
-                       client_sock->request.read_cache_len);
-                client_sock->request.read_cache_len += len;
-                free_buf(malloc_buf);
                 return IO_EAGAIN;
             }
         }
 
         if (r == IO_LINE_DONE) {
             // 缓冲区有数据
-            if (client_sock->request.read_cache > 0) {
-                malloc_buf = client_sock->request.read_cache;
-                len = client_sock->request.read_cache_len;
-                client_sock->request.read_cache = NULL;
-                client_sock->request.read_cache_len = 0;
-            }
+
 //        malloc_buf[len]='\0';
             printf("DEBUG: request-body:%s", malloc_buf);
 //        printf("\0");
@@ -387,11 +387,12 @@ int request_body(int client_fd, SocketNode *client_sock) {
             //加了一个误差，多余的。
             if (len + 5 >= client_sock->request.body_len) {
                 break;
-
             }
         }
     } while (r == IO_LINE_DONE);
-    free_buf(malloc_buf);
+    
+    free_buf(client_sock->request.read_cache);
+    client_sock->request.read_cache_len = 0;
     client_sock->IO_STATUS = R_RESPONSE;
     return IO_DONE;
 }

@@ -65,14 +65,6 @@ void add_socket_node(SocketNode *head, SocketNode *client); //添加socket节点
 
 void free_socket_node(SocketNode *head, int client_fd); //释放socket节点
 
-//********************路由匹配**********************
-typedef struct urlroute{
-    char route[64];
-    char *(*func)(SocketNode *);
-} UrlRoute;
-
-// 返回一个函数指针,该函数返回接受SocketNode * 参数,返回char *
-typedef char *(*RouteFunc)(SocketNode *);
 
 //********************服务器信息**********************
 
@@ -84,5 +76,15 @@ typedef struct {
     SocketNode *head_node;
     ListNode * head_route;
 }ServerInfo;
+
+//********************路由匹配**********************
+typedef struct urlroute{
+    char route[64];
+    char *(*func)(SocketNode *);
+} UrlRoute;
+
+// 返回一个函数指针,该函数返回接受SocketNode * 参数,返回char *
+typedef char *(*RouteFunc)(SocketNode *);
+void init_route(ServerInfo *httpd);
 
 #endif //HTTPDTMP_TYPEDATA_H
