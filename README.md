@@ -1,7 +1,6 @@
 ## minihttpd
-快速提供web服务(pure c)，采用epoll。
 
-可以将自己的脚本放到该目录下，每次push，需要时直接clone或pull，就立即可以提供web服务。
+采用Pure C 写的基于事件循环的HTTP Server，具有EAGAIN处理、简单的路由等，麻雀虽小五脏俱全。
 
 ## Use it ?
 
@@ -13,7 +12,7 @@ gcc -o httpd main.c
 
 ## Update Log
 ### 2015.11.14
-用c语言的完成的web server,采用select实现非阻塞,正在实现epoll.
+用c语言的完成的web server，基于事件循环机制
 
 可以根据get的路径返回html或者not found.
 
@@ -110,7 +109,10 @@ int handle_request(int client_fd){
 ### 2015.12.18
 fix bug:select的timeout每次会进行重置，所以需要在每次select之前进行重新设置
 
+### 2016.07.20
+模块分类更加细致
 
+添加命令行解析工具
 ## 附录
 
 #### Index
