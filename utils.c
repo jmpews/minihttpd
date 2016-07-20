@@ -5,6 +5,8 @@
 #include "utils.h"
 #include "typedata.h"
 
+extern int debug_header, debug_body, debug_tips;
+
 //*****************************************  服务器初始化模块  ************************************
 
 void set_nonblocking(int sockfd) {
@@ -20,8 +22,8 @@ void set_nonblocking(int sockfd) {
         printf("ERROR: fcntl F_SETFL\n");
         exit(1);
     }
-
-    printf("DEBUG: set socket-[%d] non-blocking.\n", sockfd);
+    if(debug_tips)
+        printf("> socket-[%d] non-blocking.\n", sockfd);
 }
 
 ServerInfo *startup(int *port) {
@@ -223,6 +225,8 @@ int request_header_start(int client_fd, SocketNode *client_sock) {
     char tmp_buf[1024];
     char *malloc_buf = NULL;
 
+    if(debug_header)
+        printf("socket-%d] request-header: \n", client_fd);
     r = read_line_more(client_fd, &malloc_buf, &len);
     if (r == IO_ERROR) {
         printf("ERROR: request_header_start...\n");
@@ -278,12 +282,11 @@ int request_header_start(int client_fd, SocketNode *client_sock) {
         memcpy(client_sock->request.request_path, tmp_buf, i + 1);
 
         //打印，保存到header_dump
-        if (1)
-            printf("%s", malloc_buf);
+        if (debug_header)
+            printf("  %s", malloc_buf);
 
         save_header_dump(client_sock);
 
-        printf("DEBUG: [socket-node-%d],detial={path:%s}\n", client_fd, client_sock->request.request_path);
         return IO_DONE;
     }
     return IO_ERROR;
@@ -319,7 +322,6 @@ int request_header_body(int client_fd, SocketNode *client_sock) {
             printf("ERROR: request_header_body...\n");
             exit(1);
         }
-        
         // read_cache内有上次缓存数据
         // 状态为IO_EAGAIN,表明缓冲区还有数据
         handle_eagain_cache(client_sock, r, malloc_buf, len);
@@ -335,8 +337,8 @@ int request_header_body(int client_fd, SocketNode *client_sock) {
         if (r == IO_LINE_DONE) {
             handle_header_kv(client_fd, malloc_buf, len, client_sock);
         }
-        if (1)
-            printf("%s", malloc_buf);
+        if (debug_header)
+            printf("  %s", malloc_buf);
         // 保存整个header
         save_header_dump(client_sock);
     } while ((strcasecmp(malloc_buf, "\n")) && r == IO_LINE_DONE);
@@ -353,6 +355,8 @@ int request_body(int client_fd, SocketNode *client_sock) {
     char *malloc_buf = NULL;
     int len = 0;
     char *buffer;
+    if(debug_body)
+        printf("[socket-%d] request-body:\n", client_fd);
     //PRINT_LINE_TITLE("header-end");
     // body没有数据
     if (!client_sock->request.body_len) {
@@ -379,12 +383,8 @@ int request_body(int client_fd, SocketNode *client_sock) {
 
         if (r == IO_LINE_DONE) {
             // 缓冲区有数据
-
-//        malloc_buf[len]='\0';
-            printf("DEBUG: request-body:%s", malloc_buf);
-//        printf("\0");
-//            fflush(stdout);
-            //加了一个误差，多余的。
+            if(debug_body)
+                printf("  %s", malloc_buf);
             if (len + 5 >= client_sock->request.body_len) {
                 break;
             }
@@ -516,9 +516,9 @@ int send_file(int client_fd, char *file_path, long *len) {
                 return IO_EAGAIN;
             }
             else {
-                printf("ERROR: send error.");
+                printf("ERROR: send file error.");
                 fclose(fd);
-                return IO_ERROR;
+                exit(1);
             }
         }
         *len += r;
@@ -537,6 +537,8 @@ int handle_response(SocketNode *client_sock, ServerInfo *httpd) {
     struct stat st;
     int r;
     int client_fd = client_sock->client_fd;
+    if(debug_tips)
+        printf("> [socket-%d] response now.\n", client_fd);
     memset(response_path, 0, 256);
     //空异常 TODO
     if ((client_sock->IO_STATUS == R_RESPONSE) && (!client_sock->response.response_cache_len)) {

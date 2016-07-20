@@ -57,7 +57,7 @@ typedef struct sn {
     struct sn *next;
 } SocketNode;
 
-SocketNode *new_socket_node(); //新建一个socket节点
+SocketNode *new_socket_node(int client_fd); //新建一个socket节点
 
 SocketNode *find_socket_node(SocketNode *head, int client_fd); //查找特定描述符节点
 
@@ -86,5 +86,6 @@ typedef struct urlroute{
 // 返回一个函数指针,该函数返回接受SocketNode * 参数,返回char *
 typedef char *(*RouteFunc)(SocketNode *);
 void init_route(ServerInfo *httpd);
+char *handle_route(ServerInfo *httpd, SocketNode *client_sock, char *route_key);
 
 #endif //HTTPDTMP_TYPEDATA_H

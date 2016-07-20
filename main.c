@@ -16,6 +16,7 @@ static struct option longopts[] = {
 };
 
 
+int debug_header = 0, debug_body = 0, debug_tips = 0;
 void select_loop(ServerInfo *httpd);
 
 int main(int argc, const char *argv[]) {
@@ -39,7 +40,8 @@ int main(int argc, const char *argv[]) {
                 debug_tips = 1;
                 break;
             default:
-                printf("usage:\n--port 'listen port'\n--header 'debug show header'\n--body 'debug show body'\n--tips 'debug show tips'\n");
+                printf("usage:\n  --port 'listen port'\n  --header 'debug show header'\n  --body 'debug show body'\n  --tips 'debug show tips'\n");
+				exit(1);
         }
     }
     httpd = startup(&port);
@@ -49,7 +51,7 @@ int main(int argc, const char *argv[]) {
     }
 
     init_route(httpd);
-    printf("> start listening at %d\n", port);
+    printf("> start listening %d.\n", port);
 
     select_loop(httpd);
 }
@@ -102,7 +104,7 @@ void select_loop(ServerInfo *httpd) {
         tv.tv_usec = 0;
         r = select(maxfd + 2, &tmp_read_fds, &tmp_write_fds, &tmp_exception_fds, &tv);
         if (r < 0)
-            perror("ERROR: select() error.");
+            perror("ERROR: select() error.\n");
         else {
             if (FD_ISSET(server_fd, &tmp_read_fds)) {
                 client_fd = accept(server_fd, (struct sockaddr *) &client_addr, &addr_len);
@@ -110,7 +112,8 @@ void select_loop(ServerInfo *httpd) {
                     printf("ERROR :client connect error.\n");
                 else {
                     inet_ntop(AF_INET, &(client_addr.sin_addr), ipaddr, 32 * sizeof(char));
-                    printf("> [socket-%d] accept, detail{ip: %s}\n", client_fd, ipaddr);
+					if(debug_tips)
+                    	printf("[socket-%d] accept, detail={ip: %s}\n", client_fd, ipaddr);
                     set_nonblocking(client_fd);
                     SocketNode *tmp = new_socket_node(client_fd);
                     tmp->client_fd = client_fd;
@@ -127,7 +130,7 @@ void select_loop(ServerInfo *httpd) {
                         if (FD_ISSET(i, &tmp_read_fds)) {
                             r = recv(i, &c, 1, MSG_PEEK);
                             if (r < 1) {
-                                printf("DEBUG: close [fd-%d]\n", i);
+                                printf("> [socket-%d] closed.\n", i);
                                 free_socket_node(httpd->head_node, i);
                                 FD_CLR(i, &read_fds);
                                 client_array[i] = 0;
@@ -141,13 +144,13 @@ void select_loop(ServerInfo *httpd) {
                                 FD_CLR(i, &read_fds);
                                 FD_SET(i, &write_fds);
                             } else if (r == IO_ERROR) {
-                                printf("DEBUG: close [fd-%d]\n", i);
+                                printf("> [socket-%d] error closed.\n", i);
                                 FD_CLR(i, &read_fds);
                                 free_socket_node(httpd->head_node, i);
                                 client_array[i] = 0;
                             }
                             else if (r == IO_EAGAIN) {
-                                printf("EAGAIN:wow.");
+                                printf("WARNNING: recv EAGAIN code.\n");
                             }
                         }
                         else if (FD_ISSET(i, &tmp_write_fds)) {
@@ -217,7 +220,7 @@ void epoll_loop(ServerInfo *httpd) {
                     //ET until get the errno=EAGAIN
                     while ((client_fd = accept(server_fd, (struct sockaddr *) &client_addr, &socket_len)) > 0) {
                         inet_ntop(AF_INET, &(client_addr.sin_addr), ipaddr, 32 * sizeof(char));
-                        printf("> SOCKET[%d] Accept : %s\n", client_fd, ipaddr);
+                        printf("> [socket-%d] accept : %s\n", client_fd, ipaddr);
                         set_nonblocking(client_fd);
                         ev.data.fd = client_fd;
                         ev.events = EPOLLIN | EPOLLET;

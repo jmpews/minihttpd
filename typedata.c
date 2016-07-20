@@ -132,13 +132,13 @@ void free_socket_node(SocketNode *head, int client_fd) {
 
     //没找到node
     if ((tmp->next) == NULL) {
-        printf("ERROR: socket-node-list is empty when free [%d-socket-node]\n", client_fd);
+        printf("ERROR: socket-node-list is empty when free [socket-%d]\n", client_fd);
         exit(1);
     }
 
     tmp2free = tmp->next;
     tmp->next = tmp->next->next;
-    printf("DEBUG: free [socket-node-%d],detail:{request-path:%s}\n", client_fd, tmp2free->request.request_path);
+    printf("> [socket-%d] free.\n", client_fd);
     free_buf(tmp2free->request.read_cache);
     free_buf(tmp2free->request.header_dump);
     free_buf(tmp2free->request.request_path);
