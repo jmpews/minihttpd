@@ -313,9 +313,11 @@ void handle_header_kv(int client_fd, char *buf, int len, SocketNode *client_sock
  */
 int request_header_body(int client_fd, SocketNode *client_sock) {
     int r, len;
+    short end;
     char *malloc_buf = NULL;
     do {
         len = 0;
+        end = 0;
         malloc_buf = NULL;
         r = read_line_more(client_fd, &malloc_buf, &len);
         if (r == IO_ERROR) {
@@ -333,15 +335,17 @@ int request_header_body(int client_fd, SocketNode *client_sock) {
             }
         }
 
-
         if (r == IO_LINE_DONE) {
             handle_header_kv(client_fd, malloc_buf, len, client_sock);
         }
         if (debug_header)
             printf("  %s", malloc_buf);
+
+        if(strcasecmp(malloc_buf, "\n"))
+            end = 1;
         // 保存整个header
         save_header_dump(client_sock);
-    } while ((strcasecmp(malloc_buf, "\n")) && r == IO_LINE_DONE);
+    } while (end && r == IO_LINE_DONE);
 
     // 设置下一个状态
     client_sock->IO_STATUS = R_BODY;
