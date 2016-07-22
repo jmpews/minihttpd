@@ -48,12 +48,22 @@ typedef struct {
     char *response_path;        //响应文件路径
 } Resp;
 
+/* 路由handler */
+typedef int (*RequestHandler)(struct sn *, struct si *);
+typedef struct routehandler{
+    char urlstring[64];
+    RequestHandler func;
+    //char *(*requesthandler)(SocketNode *);
+} RouteHandler;
+
+
 /* socket连接节点 */
 typedef struct sn {
     int client_fd;          //socket连接描述符
     char IO_STATUS;         //socket状态
     Req request;            //socket对应的请求
     Resp response;          //socket对应的响应
+    struct routehandler *handler;
     struct sn *next;
 } SocketNode;
 
@@ -68,7 +78,7 @@ void free_socket_node(SocketNode *head, int client_fd); //释放socket节点
 
 //********************服务器信息**********************
 
-typedef struct {
+typedef struct si{
     char ip[20];
     int port;
     int fd;
@@ -77,15 +87,8 @@ typedef struct {
     ListNode * head_route;
 }ServerInfo;
 
-//********************路由匹配**********************
-typedef struct urlroute{
-    char route[64];
-    char *(*func)(SocketNode *);
-} UrlRoute;
-
 // 返回一个函数指针,该函数返回接受SocketNode * 参数,返回char *
-typedef char *(*RouteFunc)(SocketNode *);
-void init_route(ServerInfo *httpd);
-char *handle_route(ServerInfo *httpd, SocketNode *client_sock, char *route_key);
-
+void init_route_handler(ServerInfo *httpd);
+RouteHandler *get_route_handler(ListNode *head_route, char *key);
+RouteHandler *new_route_handler(char *urlstring, RequestHandler func);
 #endif //HTTPDTMP_TYPEDATA_H

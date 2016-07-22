@@ -149,59 +149,23 @@ void free_socket_node(SocketNode *head, int client_fd) {
 //    TIP printf("> SOCKET[%d] ready close.\n", client_fd);
 }
 
-char *route_func1(SocketNode *tmp) {
-    char *str;
-    char *s = "route.1:hello world\n\0";
-    str = (char *) malloc(1024 * sizeof(char));
-    strcpy(str, s);
-    str[strlen(s)] = '\0';
-    return str;
-}
-
-char *route_func2(SocketNode *tmp) {
-    char *str;
-    char *s = "route.2:hello world\n\0";
-    str = (char *) malloc(1024 * sizeof(char));
-    strcpy(str, s);
-    str[strlen(s)] = '\0';
-    return str;
-}
-
-char *route_func3(SocketNode *tmp) {
-    return tmp->request.header_dump;
-}
-
-int find_route(ElemType *data, void *key) {
-    if (!strcasecmp((char *) key, ((UrlRoute *) data)->route)) {
-        printf("匹配到route:%s", (char *) key);
-        return 1;
+RouteHandler *get_route_handler(ListNode *head_route, char *key) {
+    ListNode *tmp = head_route->next;
+    RouteHandler *uh= (RouteHandler *)head_route->data;
+    while(tmp) {
+        uh = (RouteHandler *)tmp->data;
+        if (!strcasecmp(key, uh->urlstring)) {
+            printf("> match route %s.", key);
+            return uh;
+        }
+        tmp = tmp->next;
     }
-    return 0;
+    return NULL;
 }
 
-UrlRoute *new_route_node(char *route_str, RouteFunc func) {
-    UrlRoute *tmp = (UrlRoute *) malloc(sizeof(UrlRoute));
-    strcpy(tmp->route, route_str);
+RouteHandler *new_route_handler(char *urlstring, RequestHandler func) {
+    RouteHandler *tmp = (RouteHandler *) malloc(sizeof(RouteHandler));
+    strcpy(tmp->urlstring, urlstring);
     tmp->func = func;
     return tmp;
-}
-
-void init_route(ServerInfo *httpd) {
-    httpd->head_route = new_list_node();
-    list_append(httpd->head_route, new_route_node("/route1", route_func1));
-    list_append(httpd->head_route, new_route_node("/route2", route_func2));
-    list_append(httpd->head_route, new_route_node("/echo", route_func3));
-}
-
-char *handle_route(ServerInfo *httpd, SocketNode *client_sock, char *route_key) {
-    char *resp;
-    ElemType *data;
-    data = list_get_by_func(httpd->head_route, find_route, route_key);
-    if (data) {
-        resp = ((UrlRoute *) data)->func(client_sock);
-        return resp;
-    }
-    else {
-        return NULL;
-    }
 }

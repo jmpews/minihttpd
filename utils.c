@@ -466,7 +466,7 @@ void send_data(int client, char *data) {
     send(client, data, strlen(data), 0);
 }
 
-void send_not_found(int client_fd) {
+void send_404(int client_fd) {
     int buffer_size = 1024;
     char buf[buffer_size];
     memset(buf, 0, buffer_size);
@@ -483,118 +483,88 @@ void send_not_found(int client_fd) {
     send(client_fd, buf, strlen(buf), 0);
 }
 
-int send_file(int client_fd, char *file_path, long *len) {
-    int buffer_size = 1024;
+int send_file(int client_fd, char *path, long *start) {
+    struct stat st;
     FILE *fd;
-    long file_length = 0;
+    int buffer_size = 1024;
+    int n, r;
     char buf[buffer_size];
-    int t = 0, r = 0;
+    if ((stat(path, &st) != -1) && ((st.st_mode & S_IFMT) == S_IFREG)) {
+        fd = fopen(path, "r");
+        if(!fd) {
+            printf("ERROR: %s open failed.\n", path);
+            exit(1);
+        }
+        fseek(fd, *start, SEEK_SET);
 
-    fd = fopen(file_path, "r");
-    if (fd == NULL) {
-        perror("! send_file/fopen error\n");
+        while(1) {
+            memset(buf, 0, buffer_size);
+            n = fread(buf, sizeof(char), buffer_size, fd);
+            r = send(client_fd, buf, n, 0);
+            if(r <- 1) {
+                if (errno == EAGAIN){
+                    printf("> EAGAIN: send_file:%s\n", path);
+                    fclose(fd);
+                    return IO_EAGAIN;
+                }
+                else {
+                    printf("ERROR: unknown at send_file.\n");
+                }
+            }
+            // 文件读取的字节数和发送的字节数不同
+            else if(r != n) {
+                printf("ERROR: n!=r at send_file.");
+                exit(1);
+            }
+            // 文件读取的字节数和缓冲区的size不一样，需要判断发生了什么？
+            else {
+                if(n != buffer_size) {
+                     if (ferror(fd)) {
+                        printf("ERROR: %s reading error.", path);
+                    }
+                    else if (feof(fd)) {
+                        fclose(fd);
+                        return IO_DONE;
+                    }
+                }
+
+            }
+            *start += n;
+       }
+    } else {
+        printf("ERROR: not found\n");
         exit(1);
     }
 
-    //内容长度，暂时不用，协议自动计算
-    fseek(fd, 0, SEEK_END);
-    file_length = ftell(fd);
-    rewind(fd);
-
-    //设置文件当前指针,为上次没有读完的
-    if (*len)
-        fseek(fd, *len, SEEK_SET);
-    else
-        send_headers(client_fd);
-    while (1) {
-        memset(buf, 0, buffer_size);
-        t = fread(buf, sizeof(char), buffer_size, fd);
-        r = send(client_fd, buf, t, 0);
-        if (r < 0) {
-            if (errno == EAGAIN) {
-                fclose(fd);
-                return IO_EAGAIN;
-            }
-            else {
-                printf("ERROR: send file error.");
-                fclose(fd);
-                exit(1);
-            }
-        }
-        *len += r;
-        if ((*len + 2) >= file_length || t <= (buffer_size - 2)) {
-            fclose(fd);
-            return IO_DONE;
-        }
-
-    }
 }
 
-int handle_response(SocketNode *client_sock, ServerInfo *httpd) {
-    char response_path[256];
-    RouteFunc func;
-    char *resp = NULL;
-    struct stat st;
+
+int handle_response_with_handler(SocketNode *client_sock, ServerInfo *httpd) {
+    RouteHandler *rthandler;
+    RequestHandler reqhandler;
     int r;
-    int client_fd = client_sock->client_fd;
-    if(debug_tips)
-        printf("> [socket-%d] response now.\n", client_fd);
-    memset(response_path, 0, 256);
-    //空异常 TODO
-    if ((client_sock->IO_STATUS == R_RESPONSE) && (!client_sock->response.response_cache_len)) {
-        //先进行路由匹配
-        resp = handle_route(httpd, client_sock, client_sock->request.request_path);
-        if (resp) {
-            send_data(client_fd, resp);
+    if(client_sock->handler != NULL) {
+        rthandler = client_sock->handler;
+    } else {
+        rthandler = get_route_handler(httpd->head_route, client_sock->request.request_path);
+        if(rthandler == NULL) {
+            rthandler = (RouteHandler *)httpd->head_route->data;
         }
-        else {
-            //strcpy(response_path,"/root/httpd/index.html");
-            //strcpy(response_path,"/Users/jmpews/Desktop/jmp2httpd/jmp2httpd/htdocs/index.html");
-            sprintf(response_path, "%s/htdocs%s", httpd->rootpath, client_sock->request.request_path);
-            //sprintf(response_path, "/Users/jmpews/Desktop/jmp2httpd/jmp2httpd/htdocs%s", client_sock->request.request_path);
-            if (response_path[strlen(response_path) - 1] == '/')
-                strcat(response_path, "index.html");
-            response_path[strlen(response_path)] = '\0';
-            //printf("%s\n",response_path);
-            //fflush(stdout);
+    }
 
-            //发送文件
-            if ((stat(response_path, &st) != -1) && ((st.st_mode & S_IFMT) == S_IFREG)) {
-                // strcpy(tmp->Header.request_path,request_path);
-                // tmp->Header.request_path[strlen(tmp->Header.request_path)]='\0';
-                client_sock->response.response_path = (char *) malloc(strlen(response_path) + 1);
-                memcpy(client_sock->response.response_path, response_path, strlen(response_path) + 1);
-                r = send_file(client_fd, response_path, &client_sock->response.response_cache_len);
-                if (r == IO_EAGAIN)
-                    return IO_EAGAIN;
-                else if (r == IO_DONE)
-                    return IO_DONE;
-                else if (r == IO_ERROR) {
-                    return IO_ERROR;
-                }
-            }
-            else {
-                send_not_found(client_fd);
-                return IO_DONE;
-            }
+    client_sock->handler = rthandler;
+    reqhandler = rthandler->func;
+    r = reqhandler(client_sock, httpd);
 
-        }
-
-    } else if (client_sock->response.response_cache_len) { //继续发送未完成的文件
-        r = send_file(client_fd, client_sock->response.response_path, &client_sock->response.response_cache_len);
-        if (r == IO_EAGAIN)
-            return IO_EAGAIN;
-        else if (r == IO_DONE)
-            return IO_DONE;
-        else if (r == IO_ERROR) {
-            return IO_ERROR;
-        }
+    if(r == IO_DONE)
+        return IO_DONE;
+    else if(r == IO_EAGAIN) {
+        return IO_EAGAIN;
     }
     else {
-        printf("ERROR: error socket code");
+        printf("ERROR: reqhandle error at handle_response_with_handler func.\n");
+        exit(1);
     }
-    return IO_DONE;
 }
-
 
 

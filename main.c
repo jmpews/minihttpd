@@ -4,7 +4,6 @@
 #include "main.h"
 #include "utils.h"
 #include <libgen.h>
-
 #include <getopt.h>
 static struct option longopts[] = {
     { "port",       required_argument,      NULL,           'p' },
@@ -14,7 +13,6 @@ static struct option longopts[] = {
     { "help",       no_argument,            NULL,           'h' },
     { NULL,         0,                      NULL,           0 }
 };
-
 
 int debug_header = 0, debug_body = 0, debug_tips = 0;
 void select_loop(ServerInfo *httpd);
@@ -49,8 +47,7 @@ int main(int argc, const char *argv[]) {
         printf("ERROR: init socket() error.\n");
         exit(1);
     }
-
-    init_route(httpd);
+    init_route_handler(httpd);
     printf("> start listening %d.\n", port);
 
     select_loop(httpd);
@@ -112,8 +109,7 @@ void select_loop(ServerInfo *httpd) {
                     printf("ERROR :client connect error.\n");
                 else {
                     inet_ntop(AF_INET, &(client_addr.sin_addr), ipaddr, 32 * sizeof(char));
-					if(debug_tips)
-                    	printf("[socket-%d] accept, detail={ip: %s}\n", client_fd, ipaddr);
+                    printf("[socket-%d] accept, detail={ip: %s}\n", client_fd, ipaddr);
                     set_nonblocking(client_fd);
                     SocketNode *tmp = new_socket_node(client_fd);
                     tmp->client_fd = client_fd;
@@ -156,7 +152,7 @@ void select_loop(ServerInfo *httpd) {
                         else if (FD_ISSET(i, &tmp_write_fds)) {
                             //send data
                             client_sock=find_socket_node(httpd->head_node,i);
-                            r = handle_response(client_sock, httpd);
+                            r = handle_response_with_handler(client_sock, httpd);
                             if (r == IO_DONE || r == IO_ERROR) {
                                 shutdown(i, SHUT_WR);
                                 FD_CLR(i, &write_fds);
