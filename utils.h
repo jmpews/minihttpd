@@ -15,10 +15,16 @@
 
 #define IO_ERROR -1
 
-#define IO_EAGAIN EAGAIN
-#define IO_DONE 0
+
+
 #define IO_LINE_DONE 1
 #define IO_LINE_NOT_DONE 2
+#define IO_DONE_R 3 //request read IO_DONE
+#define IO_DONE_W 4 //response write IO_DONE
+#define NO_HANDLER 5 //没有找到HANDLER
+#define IO_EAGAIN_R EAGAIN //request read IO_EAGAIN
+#define IO_EAGAIN_W (EAGAIN+1) //request read IO_EAGAIN
+
 
 #define M_GET 1
 #define M_POST 2
@@ -31,9 +37,11 @@
 #define R_RESPONSE 4
 #define RESPONSE 5
 
+
+
 #define is_space(x) isspace((int)(x))
 void set_nonblocking(int sockfd);
 ServerInfo *startup(int *port);
-int handle_request(SocketNode *client_sock);
+int handle_request(SocketNode *client_sock, ServerInfo *httpd);
 int handle_response(SocketNode *client_sock, ServerInfo *httpd);
 #endif //HTTPDTMP_UTILS_H

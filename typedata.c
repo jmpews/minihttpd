@@ -163,9 +163,24 @@ RouteHandler *get_route_handler(ListNode *head_route, char *key) {
     return NULL;
 }
 
-RouteHandler *new_route_handler(char *urlstring, RequestHandler func) {
+RouteHandler *get_route_handler_with_reqstat(ListNode *head_route, char *key, int reqstat) {
+    ListNode *tmp = head_route->next;
+    RouteHandler *uh;
+    while(tmp) {
+        uh = (RouteHandler *)tmp->data;
+        if ((uh->reqstat == reqstat) && (!strcasecmp(key, uh->urlstring))) {
+            printf("> match route %s.", key);
+            return uh;
+        }
+        tmp = tmp->next;
+    }
+    return NULL;
+}
+
+RouteHandler *new_route_handler(char *urlstring, RequestHandler func, int reqstat) {
     RouteHandler *tmp = (RouteHandler *) malloc(sizeof(RouteHandler));
     strcpy(tmp->urlstring, urlstring);
     tmp->func = func;
+    tmp->reqstat = reqstat;
     return tmp;
 }

@@ -135,28 +135,37 @@ void select_loop(ServerInfo *httpd) {
                             }
                             //read data or close connect
                             client_sock=find_socket_node(httpd->head_node,i);
-                            r = handle_request(client_sock);
-                            if (r == IO_DONE) {
-                                FD_CLR(i, &read_fds);
-                                FD_SET(i, &write_fds);
+                            r = handle_request(client_sock, httpd);
+                            if (r == IO_DONE_W) {
+                                //FD_CLR(i, &read_fds);
+                                shutdown(i, SHUT_WR); //不用清除状态 因为下次关闭时读取0字节
+                                //FD_SET(i, &write_fds);
                             } else if (r == IO_ERROR) {
                                 printf("> [socket-%d] error closed.\n", i);
                                 FD_CLR(i, &read_fds);
                                 free_socket_node(httpd->head_node, i);
                                 client_array[i] = 0;
                             }
-                            else if (r == IO_EAGAIN) {
-                                printf("WARNNING: recv EAGAIN code.\n");
+                            else if (r == IO_EAGAIN_R) {
+                                printf("WARNNING: read EAGAIN code.\n");
+                            }
+                            else if (r == IO_EAGAIN_W) {
+                                FD_CLR(i, &read_fds);
+                                FD_SET(i, &write_fds); //重新加入select中
+                                printf("WARNNING: write EAGAIN code.\n");
                             }
                         }
                         else if (FD_ISSET(i, &tmp_write_fds)) {
                             //send data
                             client_sock=find_socket_node(httpd->head_node,i);
                             r = handle_response_with_handler(client_sock, httpd);
-                            if (r == IO_DONE || r == IO_ERROR) {
+                            if (r == IO_DONE_W || r == IO_ERROR) {
                                 shutdown(i, SHUT_WR);
                                 FD_CLR(i, &write_fds);
                                 FD_SET(i, &read_fds);
+                            }
+                            else if (r == IO_EAGAIN_W) {
+                                printf("WARNNING: write EAGAIN code.\n");
                             }
                         }
                     }
@@ -256,7 +265,6 @@ void epoll_loop(ServerInfo *httpd) {
                     else if(r==IO_EAGAIN){
                         TIP printf("EAGAIN:wow.");
                     }
-
                 }
             }
             else if (events[i].events & EPOLLOUT) {

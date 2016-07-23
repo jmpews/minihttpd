@@ -50,8 +50,10 @@ typedef struct {
 
 /* 路由handler */
 typedef int (*RequestHandler)(struct sn *, struct si *);
+
 typedef struct routehandler{
     char urlstring[64];
+    int reqstat; //routehandler触发状态，在R_HEADER_START、R_HEADER_BODY、R_BODY哪个状态触发
     RequestHandler func;
     //char *(*requesthandler)(SocketNode *);
 } RouteHandler;
@@ -90,5 +92,6 @@ typedef struct si{
 // 返回一个函数指针,该函数返回接受SocketNode * 参数,返回char *
 void init_route_handler(ServerInfo *httpd);
 RouteHandler *get_route_handler(ListNode *head_route, char *key);
-RouteHandler *new_route_handler(char *urlstring, RequestHandler func);
+RouteHandler *get_route_handler_with_reqstat(ListNode *head_route, char *key, int reqstat);
+RouteHandler *new_route_handler(char *urlstring, RequestHandler func, int reqstat);
 #endif //HTTPDTMP_TYPEDATA_H

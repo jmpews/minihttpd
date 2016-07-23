@@ -107,7 +107,7 @@ int read_line(int sock, char *buffer, int size, int *len) {
     if (r < 0) {
         // 缓冲区为空,读取失败
         if (errno == EAGAIN) {
-            return IO_EAGAIN;
+            return IO_EAGAIN_R;
         }
         else {
             printf("ERROR: error at read_line");
@@ -168,7 +168,7 @@ int read_line_more(int client_fd, char **malloc_buffer, int *len) {
             return r;
         }
 		// 需要重新挂起等待
-        else if (r == IO_EAGAIN) {
+        else if (r == IO_EAGAIN_R) {
             *len = n;
             *malloc_buffer = temp_buffer;
             return r;
@@ -197,7 +197,7 @@ int handle_error(int client_fd) {
 void handle_eagain_cache(SocketNode *client_sock, int r, char *malloc_buf, int len)  {
     // 如果read_line_more 读取数据，遇到EAGAIN，需要保存cache，需要加上之前的cache
     // 如果read_line_more 读取数据，遇到IO_LINE_DONE，表明读取完毕，查看之前是否有cache，需要加上之前的cache
-    if( (r== IO_EAGAIN && len >1) || (r == IO_LINE_DONE && client_sock->request.read_cache > 0)){
+    if( (r== IO_EAGAIN_R && len >1) || (r == IO_LINE_DONE && client_sock->request.read_cache > 0)){
         client_sock->request.read_cache = (char *) realloc(client_sock->request.read_cache,
                                                        (client_sock->request.read_cache_len + len));
         memcpy(client_sock->request.read_cache + client_sock->request.read_cache_len, malloc_buf,
@@ -238,8 +238,8 @@ int request_header_start(int client_fd, SocketNode *client_sock) {
     malloc_buf = client_sock->request.read_cache;
     len = client_sock->request.read_cache_len;
     if (client_sock->IO_STATUS == R_HEADER_START) {
-        if (r == IO_EAGAIN) {
-            return IO_EAGAIN;
+        if (r == IO_EAGAIN_R) {
+            return IO_EAGAIN_R;
         }
     }
 
@@ -287,7 +287,7 @@ int request_header_start(int client_fd, SocketNode *client_sock) {
 
         save_header_dump(client_sock);
 
-        return IO_DONE;
+        return IO_DONE_R;
     }
     return IO_ERROR;
 }
@@ -330,8 +330,8 @@ int request_header_body(int client_fd, SocketNode *client_sock) {
         malloc_buf = client_sock->request.read_cache;
         len = client_sock->request.read_cache_len;
         if (client_sock->IO_STATUS == R_HEADER_BODY) {
-            if (r == IO_EAGAIN) {
-                return IO_EAGAIN;
+            if (r == IO_EAGAIN_R) {
+                return IO_EAGAIN_R;
             }
         }
 
@@ -349,7 +349,7 @@ int request_header_body(int client_fd, SocketNode *client_sock) {
 
     // 设置下一个状态
     client_sock->IO_STATUS = R_BODY;
-    return IO_DONE;
+    return IO_DONE_R;
 }
 
 
@@ -365,7 +365,7 @@ int request_body(int client_fd, SocketNode *client_sock) {
     // body没有数据
     if (!client_sock->request.body_len) {
         client_sock->IO_STATUS = R_RESPONSE;
-        return IO_DONE;
+        return IO_DONE_R;
     }
     do {
         free_buf(malloc_buf);
@@ -380,8 +380,8 @@ int request_body(int client_fd, SocketNode *client_sock) {
         malloc_buf = client_sock->request.read_cache;
         len = client_sock->request.read_cache_len;
         if (client_sock->IO_STATUS == R_BODY) {
-            if (r == IO_EAGAIN) {
-                return IO_EAGAIN;
+            if (r == IO_EAGAIN_R) {
+                return IO_EAGAIN_R;
             }
         }
 
@@ -398,11 +398,11 @@ int request_body(int client_fd, SocketNode *client_sock) {
     free_buf(client_sock->request.read_cache);
     client_sock->request.read_cache_len = 0;
     client_sock->IO_STATUS = R_RESPONSE;
-    return IO_DONE;
+    return IO_DONE_R;
 }
 
 // 根据状态机的思路
-int handle_request(SocketNode *client_sock) {
+int handle_request(SocketNode *client_sock, ServerInfo *httpd) {
     int r;
     int client_fd=client_sock->client_fd;
     switch (client_sock->IO_STATUS) {
@@ -412,36 +412,70 @@ int handle_request(SocketNode *client_sock) {
         }
         case R_HEADER_START: {
             r = request_header_start(client_fd, client_sock);
-            if (r == IO_EAGAIN) {
+            if (r == IO_EAGAIN_R) {
                 if (client_sock->request.method == M_ERROR)
                     return IO_ERROR;
-                return IO_EAGAIN;
+                return IO_EAGAIN_R;
             }
             else if (r == IO_ERROR)
                 return IO_ERROR;
+            else if (r == IO_DONE_R) {
+                r = handle_response_with_reqstat(client_sock, httpd, R_HEADER_START);
+                if(r != NO_HANDLER) {
+                    return r;
+                }
+            }
+            else {
+                printf("ERROR: unknown error at R_HEADER_START.\n");
+                exit(1);
+            }
         }
         case R_HEADER_BODY: {
             r = request_header_body(client_fd, client_sock);
-            if (r == IO_EAGAIN) {
+            if (r == IO_EAGAIN_R) {
                 if (client_sock->request.method == M_ERROR)
                     return IO_ERROR;
-                return IO_EAGAIN;
+                return IO_EAGAIN_R;
             }
             else if (r == IO_ERROR)
                 return IO_ERROR;
+            else if (r == IO_DONE_R) {
+                r = handle_response_with_reqstat(client_sock, httpd, R_HEADER_BODY);
+                if(r != NO_HANDLER) {
+                    return r;
+                }
+            }
+            else {
+                printf("ERROR: unknown error at R_HEADER_BODY.\n");
+                exit(1);
+            }
         }
         case R_BODY: {
             r = request_body(client_fd, client_sock);
-            if (r == IO_EAGAIN || (client_sock->request.method == M_ERROR)) {
-                return IO_EAGAIN;
+            if (r == IO_EAGAIN_R || (client_sock->request.method == M_ERROR)) {
+                return IO_EAGAIN_R;
             }
             else if (r == IO_ERROR)
                 return IO_ERROR;
+            else if (r == IO_DONE_R) {
+                r = handle_response_with_reqstat(client_sock, httpd, R_BODY);
+                if(r == NO_HANDLER) {
+                    r = handle_response_with_default_handler(client_sock, httpd);
+                }
+                return r;
+            }
+            else {
+                printf("ERROR: unknown error at R_BODY.\n");
+                exit(1);
+            }
         }
-        default:
-            break;
+        default: {
+            printf("ERROR: unknown error at default.\n");
+            exit(1);
+        }
     }
-    return IO_DONE;
+    printf("ERROR: unknown error at handle_request.\n");
+    exit(1);
 }
 
 //*******************************************  Response模块  ********************************
@@ -505,11 +539,11 @@ int send_file(int client_fd, char *path, long *start) {
             memset(buf, 0, buffer_size);
             n = fread(buf, sizeof(char), buffer_size, fd);
             r = send(client_fd, buf, n, 0);
-            if(r <- 1) {
+            if(r == - 1) {
                 if (errno == EAGAIN){
                     printf("> EAGAIN: send_file:%s\n", path);
                     fclose(fd);
-                    return IO_EAGAIN;
+                    return IO_EAGAIN_W;
                 }
                 else {
                     printf("ERROR: unknown at send_file.\n");
@@ -517,7 +551,7 @@ int send_file(int client_fd, char *path, long *start) {
             }
             // 文件读取的字节数和发送的字节数不同
             else if(r != n) {
-                printf("ERROR: n!=r at send_file.");
+                printf("ERROR: n!=r at send_file.\n current_cache_length=%ld, r=%d, n=%d", *start, r, n);
                 exit(1);
             }
             // 文件读取的字节数和缓冲区的size不一样，需要判断发生了什么？
@@ -528,7 +562,7 @@ int send_file(int client_fd, char *path, long *start) {
                     }
                     else if (feof(fd)) {
                         fclose(fd);
-                        return IO_DONE;
+                        return IO_DONE_W;
                     }
                 }
 
@@ -542,28 +576,65 @@ int send_file(int client_fd, char *path, long *start) {
 
 }
 
+// 根据状态初始调用handler
+int handle_response_with_reqstat(SocketNode *client_sock, ServerInfo *httpd, int reqstat) {
+    RouteHandler *rthandler;
+    RequestHandler reqhandler;
+    int r;
+    rthandler = get_route_handler_with_reqstat(httpd->head_route, client_sock->request.request_path, reqstat);
+    if(rthandler == NULL) {
+        return NO_HANDLER;
+        rthandler = (RouteHandler *)httpd->head_route->data;
+    }
+    
+    client_sock->handler = rthandler;
+    reqhandler = rthandler->func;
+    r = reqhandler(client_sock, httpd);
+    
+    if(r == IO_DONE_W)
+        return IO_DONE_W;
+    else if(r == IO_EAGAIN_W) {
+        return IO_EAGAIN_W;
+    }
+    else {
+        printf("ERROR: reqhandle error at handle_response_with_handler func.\n");
+        exit(1);
+    }
+}
 
+//对于EAGAIN状态处理的handler
 int handle_response_with_handler(SocketNode *client_sock, ServerInfo *httpd) {
     RouteHandler *rthandler;
     RequestHandler reqhandler;
     int r;
-    if(client_sock->handler != NULL) {
-        rthandler = client_sock->handler;
-    } else {
-        rthandler = get_route_handler(httpd->head_route, client_sock->request.request_path);
-        if(rthandler == NULL) {
-            rthandler = (RouteHandler *)httpd->head_route->data;
-        }
+    rthandler = client_sock->handler;
+    reqhandler = rthandler->func;
+    r = reqhandler(client_sock, httpd);
+    if(r == IO_DONE_W)
+        return IO_DONE_W;
+    else if(r == IO_EAGAIN_W) {
+        return IO_EAGAIN_W;
     }
+    else {
+        printf("ERROR: reqhandle error at handle_response_with_handler func.\n");
+        exit(1);
+    }
+}
 
+//默认handler处理
+int handle_response_with_default_handler(SocketNode *client_sock, ServerInfo *httpd) {
+    RouteHandler *rthandler;
+    RequestHandler reqhandler;
+    int r;
+    rthandler = (RouteHandler *)httpd->head_route->data;
     client_sock->handler = rthandler;
     reqhandler = rthandler->func;
     r = reqhandler(client_sock, httpd);
-
-    if(r == IO_DONE)
-        return IO_DONE;
-    else if(r == IO_EAGAIN) {
-        return IO_EAGAIN;
+    
+    if(r == IO_DONE_W)
+        return IO_DONE_W;
+    else if(r == IO_EAGAIN_W) {
+        return IO_EAGAIN_W;
     }
     else {
         printf("ERROR: reqhandle error at handle_response_with_handler func.\n");
