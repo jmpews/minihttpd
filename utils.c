@@ -181,6 +181,75 @@ int read_line_more(int client_fd, char **malloc_buffer, int *len) {
     return r;
 }
 
+// 读取到temp目录作为临时文件
+int read_tmp_file(int client_fd, char *path, long *start) {
+    int r, n;
+    FILE *fd;
+    struct stat st;
+    int buffer_size = 1024*2;
+    char buf[buffer_size+1];
+    if ((stat(path, &st) != -1) && ((st.st_mode & S_IFMT) == S_IFREG)) {
+        fd = fopen(path, "w+");
+        if(!fd) {
+            printf("ERROR: %s open failed.\n", path);
+        }
+        while(1) {
+            memset(buf, 0, buffer_size+1);
+            n = recv(client_fd, buf, buffer_size, 0);
+            r = fwrite(buf, sizeof(char), n, fd);
+            if (n == -1) {
+                if (errno == EAGAIN) {
+                    printf("> EAGAIN: read_block:%s\n", path);
+                    fclose(fd);
+                    return IO_EAGAIN_R;
+                } else {
+                    printf("ERROR: unknown at read_block.\n");
+                    exit(1);
+                }
+            }
+            else if(r != n) {
+                printf("ERROR: n!=r at send_file.\n current_cache_length=%ld, r=%d, n=%d", *start, r, n);
+                exit(1);
+            }
+            else {
+                if(n != buffer_size) {
+                     if (ferror(fd)) {
+                        printf("ERROR: %s reading error.", path);
+                    }
+                    else if (n < buffer_size) {
+                        fclose(fd);
+                        return IO_DONE_W;
+                    }
+                }
+            }
+            *start += n;
+        }
+    } else {
+        printf("ERROR: unknown at read_block\n");
+        exit(1);
+    }
+}
+
+char *new_tmp_file(ServerInfo *httpd) {
+    char *tmp_file_path;
+    char tmp[128];
+    FILE *fd;
+    tmp_file_path = (char *)malloc(sizeof(char) * 256);
+    memset(tmp_file_path, 0, 256);
+
+    time_t nowtime = time(NULL);
+    struct tm *now = localtime(&nowtime);
+    sprintf(tmp, "jmp.%d.%d.%d.%d.%d.%d", now->tm_year+1900, now->tm_mon+1, now->tm_mday, now->tm_hour, now->tm_min, now->tm_sec);
+    sprintf(tmp_file_path, "%s/upload/%s", httpd->rootpath, tmp);
+    fd = fopen(tmp_file_path, "w+");
+    if(fd == NULL) {
+        printf("ERROR: new file error.\n");
+        exit(1);
+    }
+    fclose(fd);
+    return tmp_file_path;
+}
+
 
 int handle_error(int client_fd) {
     char *malloc_buf;
@@ -254,16 +323,16 @@ int request_header_start(int client_fd, SocketNode *client_sock) {
             j++;
         }
         tmp_buf[i] = '\0';
-        if (strcasecmp(tmp_buf, "GET") && strcasecmp(tmp_buf, "POST")) {
+        if (strcasecmp(tmp_buf, "GET") && strcasecmp(tmp_buf, "POST") && strcasecmp(tmp_buf, "PUT")) {
             free_buf(malloc_buf);
             len = 0;
             printf("ERROR: request_header_start error of \n%s", malloc_buf);
             return handle_error(client_fd);
-            //exit(1);
+            exit(1);
         }
         if (!strcasecmp(tmp_buf, "GET"))
             client_sock->request.method = M_GET;
-        else if (!strcasecmp(tmp_buf, "POST"))
+        else if ((!strcasecmp(tmp_buf, "POST"))||(!strcasecmp(tmp_buf, "PUT")))
             client_sock->request.method = M_POST;
         else
             client_sock->request.method = M_ERROR;
@@ -411,6 +480,11 @@ int handle_request(SocketNode *client_sock, ServerInfo *httpd) {
             client_sock->IO_STATUS = R_HEADER_START;
         }
         case R_HEADER_START: {
+            // 在header_start就开始使用handler
+            r = handle_response_with_reqstat(client_sock, httpd, R_HEADER_START);
+            if(r != NO_HANDLER) {
+                return r;
+            }
             r = request_header_start(client_fd, client_sock);
             if (r == IO_EAGAIN_R) {
                 if (client_sock->request.method == M_ERROR)
@@ -420,10 +494,7 @@ int handle_request(SocketNode *client_sock, ServerInfo *httpd) {
             else if (r == IO_ERROR)
                 return IO_ERROR;
             else if (r == IO_DONE_R) {
-                r = handle_response_with_reqstat(client_sock, httpd, R_HEADER_START);
-                if(r != NO_HANDLER) {
-                    return r;
-                }
+
             }
             else {
                 printf("ERROR: unknown error at R_HEADER_START.\n");
@@ -431,6 +502,11 @@ int handle_request(SocketNode *client_sock, ServerInfo *httpd) {
             }
         }
         case R_HEADER_BODY: {
+            // 在handler_key_value的时候
+            r = handle_response_with_reqstat(client_sock, httpd, R_HEADER_BODY);
+            if(r != NO_HANDLER) {
+                return r;
+            }
             r = request_header_body(client_fd, client_sock);
             if (r == IO_EAGAIN_R) {
                 if (client_sock->request.method == M_ERROR)
@@ -440,10 +516,7 @@ int handle_request(SocketNode *client_sock, ServerInfo *httpd) {
             else if (r == IO_ERROR)
                 return IO_ERROR;
             else if (r == IO_DONE_R) {
-                r = handle_response_with_reqstat(client_sock, httpd, R_HEADER_BODY);
-                if(r != NO_HANDLER) {
-                    return r;
-                }
+
             }
             else {
                 printf("ERROR: unknown error at R_HEADER_BODY.\n");
@@ -451,23 +524,24 @@ int handle_request(SocketNode *client_sock, ServerInfo *httpd) {
             }
         }
         case R_BODY: {
-            r = request_body(client_fd, client_sock);
-            if (r == IO_EAGAIN_R || (client_sock->request.method == M_ERROR)) {
-                return IO_EAGAIN_R;
-            }
-            else if (r == IO_ERROR)
-                return IO_ERROR;
-            else if (r == IO_DONE_R) {
-                r = handle_response_with_reqstat(client_sock, httpd, R_BODY);
-                if(r == NO_HANDLER) {
-                    r = handle_response_with_default_handler(client_sock, httpd);
+            r = handle_response_with_reqstat(client_sock, httpd, R_BODY);
+            if(r == NO_HANDLER) {
+                r = request_body(client_fd, client_sock);
+                if (r == IO_EAGAIN_R || (client_sock->request.method == M_ERROR)) {
+                    return IO_EAGAIN_R;
                 }
-                return r;
+                else if (r == IO_ERROR)
+                    return IO_ERROR;
+                else if (r == IO_DONE_R) {
+                    r = handle_response_with_default_handler(client_sock, httpd);
+                    return r;
+                }
+                else {
+                    printf("ERROR: unknown error at R_BODY.\n");
+                    exit(1);
+                }
             }
-            else {
-                printf("ERROR: unknown error at R_BODY.\n");
-                exit(1);
-            }
+            return r;
         }
         default: {
             printf("ERROR: unknown error at default.\n");
@@ -547,6 +621,7 @@ int send_file(int client_fd, char *path, long *start) {
                 }
                 else {
                     printf("ERROR: unknown at send_file.\n");
+                    exit(1);
                 }
             }
             // 文件读取的字节数和发送的字节数不同

@@ -35,10 +35,29 @@ int echo_handler(SocketNode *client_sock, ServerInfo *httpd) {
     return IO_DONE_W;
 }
 
+int upload_handler(SocketNode *client_sock, ServerInfo *httpd) {
+    char *tmp_file_path;
+    int r;
+    tmp_file_path = new_tmp_file(httpd);
+    client_sock->request.tmp_file_path = tmp_file_path;
+    r = read_tmp_file(client_sock->client_fd, tmp_file_path, &client_sock->request.read_cache_len);
+    if(r == IO_EAGAIN_R) {
+        return IO_EAGAIN_W;
+    } else if(r == IO_DONE_W) {
+        send_data(client_sock->client_fd, tmp_file_path);
+        return IO_DONE_W;
+    }
+    return IO_DONE_W;
+}
+
+
 void init_route_handler(ServerInfo *httpd) {
     ListNode *head_route = new_list_node();
     head_route->data = (void *)new_route_handler("*", default_handler, R_BODY);
     head_route->next = NULL;
     httpd->head_route = head_route;
     list_append(httpd->head_route, (void *)new_route_handler("/echo", echo_handler, R_BODY));
+    list_append(httpd->head_route, (void *)new_route_handler("/upload", upload_handler, R_BODY));
+
 }
+

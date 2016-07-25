@@ -11,6 +11,7 @@
 #include <sys/errno.h>
 #include <ctype.h>
 #include <sys/stat.h>
+#include <time.h>
 #include "typedata.h"
 
 #define IO_ERROR -1
@@ -42,6 +43,9 @@
 #define is_space(x) isspace((int)(x))
 void set_nonblocking(int sockfd);
 ServerInfo *startup(int *port);
+
 int handle_request(SocketNode *client_sock, ServerInfo *httpd);
 int handle_response(SocketNode *client_sock, ServerInfo *httpd);
+char *new_tmp_file(ServerInfo *httpd);
+int read_tmp_file(int client_fd, char *path, long *start);
 #endif //HTTPDTMP_UTILS_H

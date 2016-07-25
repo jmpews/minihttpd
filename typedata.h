@@ -34,11 +34,12 @@ ListNode *new_list_node(); //新建一个链表节点
 /* 请求结构体 */
 typedef struct {
     char *read_cache;       //缓存读取内容
-    int read_cache_len;     //缓存的内容长度
+    long read_cache_len;     //缓存的内容长度
     char *header_dump;      //缓存请求头
     int header_dump_len;    //请求头的长度
     char method;            //请求方法
     char *request_path;     //请求路径
+    char *tmp_file_path;    //临时文件
     long body_len;          //请求的body长度
 } Req;
 
