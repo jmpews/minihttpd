@@ -1,4 +1,4 @@
-/*
+ /*
  * =====================================================================================
  *
  *  Filename:       typedata.c
@@ -57,7 +57,7 @@ ListNode *new_list_node() {
     ListNode *tmp;
     tmp = (ListNode *) malloc(sizeof(ListNode));
     if (tmp == NULL) {
-        printf("ERROR : memory malloc return NULL");
+        printf("ERROR : memory malloc return NULL\n");
         exit(1);
     }
     tmp->data = NULL;
@@ -70,7 +70,7 @@ SocketNode *new_socket_node(int fd) {
     SocketNode *tmp;
     tmp = (SocketNode *) malloc(sizeof(SocketNode));
     if (tmp == NULL) {
-        printf("ERROR : memory malloc return NULL");
+        printf("ERROR : memory malloc return NULL\n");
         exit(1);
     }
     memset(tmp, 0, sizeof(SocketNode));
@@ -111,13 +111,14 @@ void free_socket_node(SocketNode *head, int client_fd) {
         exit(1);
     }
 
-    //TODO: 这里到底是否需要判断头结点
+    //TODO: 这里到底是否需要判断头结点,buxu
     if (head->client_fd == client_fd) {
-        head = NULL;
         free_buf(head->request.read_cache);
         free_buf(head->request.header_dump);
         free_buf(head->request.request_path);
+        free_buf(head->request.tmp_file_path);
         free_buf(head->response.response_path);
+        free_buf(head->reg);
         free_buf(head);
 //        close(client_fd);
         exit(1);
@@ -142,20 +143,46 @@ void free_socket_node(SocketNode *head, int client_fd) {
     free_buf(tmp2free->request.read_cache);
     free_buf(tmp2free->request.header_dump);
     free_buf(tmp2free->request.request_path);
+    free_buf(tmp2free->request.tmp_file_path);
     free_buf(tmp2free->response.response_path);
+    free_buf(tmp2free->reg);
     free_buf(tmp2free);
 
 //    close(client_fd);
 //    TIP printf("> SOCKET[%d] ready close.\n", client_fd);
 }
 
-RouteHandler *get_route_handler(ListNode *head_route, char *key) {
+
+int regex_route(RegexRoute rr, SocketNode *client_sock) {
+    regex_t reg;
+    int err;
+    char errbuf[1024];
+    client_sock->reg = (regmatch_t *)malloc(sizeof(regmatch_t) * rr.nm);
+    // 编译正则
+    if(regcomp(&reg,rr.pattern,REG_EXTENDED) < 0){
+        regerror(err,&reg,errbuf,sizeof(errbuf));
+        printf("ERROR:regex_route error of%s\n",errbuf);
+    }
+    err = regexec(&reg, client_sock->request.request_path, rr.nm, client_sock->reg,0);
+    if(err == REG_NOMATCH){
+        printf("ERROR: regex_route no match\n");
+        return 0;
+        
+    }else if(err){
+        regerror(err,&reg,errbuf,sizeof(errbuf));
+        printf("ERROR: regex_route of err:%s\n",errbuf);
+        exit(-1);
+    }
+    return 1;
+}
+
+RouteHandler *get_route_handler(ListNode *head_route, SocketNode *client_sock) {
     ListNode *tmp = head_route->next;
     RouteHandler *uh= (RouteHandler *)head_route->data;
     while(tmp) {
         uh = (RouteHandler *)tmp->data;
-        if (!strcasecmp(key, uh->urlstring)) {
-            printf("> match route %s.", key);
+        if (regex_route(uh->regexroute, client_sock)) {
+            printf("> match route %s.\n", uh->regexroute.pattern);
             return uh;
         }
         tmp = tmp->next;
@@ -163,13 +190,13 @@ RouteHandler *get_route_handler(ListNode *head_route, char *key) {
     return NULL;
 }
 
-RouteHandler *get_route_handler_with_reqstat(ListNode *head_route, char *key, int reqstat) {
+RouteHandler *get_route_handler_with_reqstat(ListNode *head_route, SocketNode *client_sock, int reqstat) {
     ListNode *tmp = head_route->next;
     RouteHandler *uh;
     while(tmp) {
         uh = (RouteHandler *)tmp->data;
-        if ((uh->reqstat == reqstat) && (!strcasecmp(key, uh->urlstring))) {
-            printf("> match route %s.", key);
+        if ((uh->reqstat == reqstat) && (regex_route(uh->regexroute, client_sock))) {
+            printf("> match route %s.\n", uh->regexroute.pattern);
             return uh;
         }
         tmp = tmp->next;
@@ -177,9 +204,15 @@ RouteHandler *get_route_handler_with_reqstat(ListNode *head_route, char *key, in
     return NULL;
 }
 
-RouteHandler *new_route_handler(char *urlstring, RequestHandler func, int reqstat) {
+void set_regex_route(char *pattern, int nm, RouteHandler *rh) {
+    rh->regexroute.pattern = (char *)malloc(sizeof(char) * strlen(pattern));
+    strcpy(rh->regexroute.pattern, pattern);
+    rh->regexroute.nm = nm;
+}
+
+RouteHandler *new_route_handler(char *pattern, int nm, RequestHandler func, int reqstat) {
     RouteHandler *tmp = (RouteHandler *) malloc(sizeof(RouteHandler));
-    strcpy(tmp->urlstring, urlstring);
+    set_regex_route(pattern, nm+1, tmp);
     tmp->func = func;
     tmp->reqstat = reqstat;
     return tmp;

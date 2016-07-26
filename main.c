@@ -84,6 +84,9 @@ void select_loop(ServerInfo *httpd) {
     FD_ZERO(&exception_fds);
 
     char ipaddr[32];
+    
+    int buffer_size = 1024*2;
+    char buf[buffer_size];
 
     FD_SET(server_fd, &read_fds);
     client_array[server_fd] = 1;
@@ -135,12 +138,26 @@ void select_loop(ServerInfo *httpd) {
                             }
                             //read data or close connect
                             client_sock=find_socket_node(httpd->head_node,i);
-                            r = handle_request(client_sock, httpd);
-                            if (r == IO_DONE_W) {
+//                            while(1) {
+//                                r = recv(client_fd, buf, buffer_size, 0);
+//                                printf("%d\n",r);
+//                                if(r<0) break;
+//                            }
+//                            continue;
+                            if(client_sock->handler != NULL)
+                                r = handle_response_with_handler(client_sock, httpd);
+                            else
+                                r = handle_request(client_sock, httpd);
+                            if (r == IO_DONE_R) {
+                                FD_CLR(i, &read_fds);
+                                FD_SET(i, &write_fds);
+                            }
+                            else if (r == IO_DONE_W) {
                                 //FD_CLR(i, &read_fds);
                                 shutdown(i, SHUT_WR); //不用清除状态 因为下次关闭时读取0字节
                                 //FD_SET(i, &write_fds);
-                            } else if (r == IO_ERROR) {
+                            }
+                            else if (r == IO_ERROR) {
                                 printf("> [socket-%d] error closed.\n", i);
                                 FD_CLR(i, &read_fds);
                                 free_socket_node(httpd->head_node, i);
@@ -166,6 +183,11 @@ void select_loop(ServerInfo *httpd) {
                             }
                             else if (r == IO_EAGAIN_W) {
                                 printf("WARNNING: write EAGAIN code.\n");
+                            }
+                            else if (r == IO_EAGAIN_R) {
+                                FD_SET(i, &read_fds);
+                                FD_CLR(i, &write_fds); //重新加入select中
+                                printf("WARNNING: read EAGAIN code.\n");
                             }
                         }
                     }

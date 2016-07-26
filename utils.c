@@ -187,16 +187,15 @@ int read_tmp_file(int client_fd, char *path, long *start) {
     FILE *fd;
     struct stat st;
     int buffer_size = 1024*2;
-    char buf[buffer_size+1];
+    char buf[buffer_size];
     if ((stat(path, &st) != -1) && ((st.st_mode & S_IFMT) == S_IFREG)) {
         fd = fopen(path, "w+");
         if(!fd) {
             printf("ERROR: %s open failed.\n", path);
         }
         while(1) {
-            memset(buf, 0, buffer_size+1);
+            memset(buf, 0, sizeof(buf));
             n = recv(client_fd, buf, buffer_size, 0);
-            r = fwrite(buf, sizeof(char), n, fd);
             if (n == -1) {
                 if (errno == EAGAIN) {
                     printf("> EAGAIN: read_block:%s\n", path);
@@ -207,18 +206,19 @@ int read_tmp_file(int client_fd, char *path, long *start) {
                     exit(1);
                 }
             }
-            else if(r != n) {
-                printf("ERROR: n!=r at send_file.\n current_cache_length=%ld, r=%d, n=%d", *start, r, n);
+            r = fwrite(buf, sizeof(char), n, fd);
+            if(r != n) {
+                printf("ERROR: n!=r at send_file.\n current_cache_length=%ld, r=%d, n=%d\n", *start, r, n);
                 exit(1);
             }
             else {
                 if(n != buffer_size) {
                      if (ferror(fd)) {
-                        printf("ERROR: %s reading error.", path);
+                        printf("ERROR: %s reading error.\n", path);
                     }
                     else if (n < buffer_size) {
                         fclose(fd);
-                        return IO_DONE_W;
+                        return IO_DONE_R;
                     }
                 }
             }
@@ -239,7 +239,8 @@ char *new_tmp_file(ServerInfo *httpd) {
 
     time_t nowtime = time(NULL);
     struct tm *now = localtime(&nowtime);
-    sprintf(tmp, "jmp.%d.%d.%d.%d.%d.%d", now->tm_year+1900, now->tm_mon+1, now->tm_mday, now->tm_hour, now->tm_min, now->tm_sec);
+    //sprintf(tmp, "jmp.%d.%d.%d.%d.%d.%d", now->tm_year+1900, now->tm_mon+1, now->tm_mday, now->tm_hour, now->tm_min, now->tm_sec);
+    sprintf(tmp, "test");
     sprintf(tmp_file_path, "%s/upload/%s", httpd->rootpath, tmp);
     fd = fopen(tmp_file_path, "w+");
     if(fd == NULL) {
@@ -525,21 +526,24 @@ int handle_request(SocketNode *client_sock, ServerInfo *httpd) {
         }
         case R_BODY: {
             r = handle_response_with_reqstat(client_sock, httpd, R_BODY);
-            if(r == NO_HANDLER) {
-                r = request_body(client_fd, client_sock);
-                if (r == IO_EAGAIN_R || (client_sock->request.method == M_ERROR)) {
-                    return IO_EAGAIN_R;
-                }
-                else if (r == IO_ERROR)
-                    return IO_ERROR;
-                else if (r == IO_DONE_R) {
-                    r = handle_response_with_default_handler(client_sock, httpd);
-                    return r;
-                }
-                else {
-                    printf("ERROR: unknown error at R_BODY.\n");
-                    exit(1);
-                }
+            if(r != NO_HANDLER) {
+                return r;
+            }
+            r = request_body(client_fd, client_sock);
+            if (r == IO_EAGAIN_R || (client_sock->request.method == M_ERROR)) {
+                return IO_EAGAIN_R;
+            }
+            else if (r == IO_ERROR)
+                return IO_ERROR;
+            else if (r == IO_DONE_R) {
+            }
+            else {
+                printf("ERROR: unknown error at R_BODY.\n");
+                exit(1);
+            }
+            r = handle_response_with_reqstat(client_sock, httpd, R_RESPONSE);
+            if(r != NO_HANDLER) {
+                r = handle_response_with_default_handler(client_sock, httpd);
             }
             return r;
         }
@@ -656,7 +660,7 @@ int handle_response_with_reqstat(SocketNode *client_sock, ServerInfo *httpd, int
     RouteHandler *rthandler;
     RequestHandler reqhandler;
     int r;
-    rthandler = get_route_handler_with_reqstat(httpd->head_route, client_sock->request.request_path, reqstat);
+    rthandler = get_route_handler_with_reqstat(httpd->head_route, client_sock, reqstat);
     if(rthandler == NULL) {
         return NO_HANDLER;
         rthandler = (RouteHandler *)httpd->head_route->data;
@@ -670,6 +674,9 @@ int handle_response_with_reqstat(SocketNode *client_sock, ServerInfo *httpd, int
         return IO_DONE_W;
     else if(r == IO_EAGAIN_W) {
         return IO_EAGAIN_W;
+    }
+    else if(r == IO_EAGAIN_R) {
+        return IO_EAGAIN_R;
     }
     else {
         printf("ERROR: reqhandle error at handle_response_with_handler func.\n");
@@ -689,6 +696,9 @@ int handle_response_with_handler(SocketNode *client_sock, ServerInfo *httpd) {
         return IO_DONE_W;
     else if(r == IO_EAGAIN_W) {
         return IO_EAGAIN_W;
+    }
+    else if(r == IO_EAGAIN_R) {
+        return IO_EAGAIN_R;
     }
     else {
         printf("ERROR: reqhandle error at handle_response_with_handler func.\n");
@@ -710,6 +720,9 @@ int handle_response_with_default_handler(SocketNode *client_sock, ServerInfo *ht
         return IO_DONE_W;
     else if(r == IO_EAGAIN_W) {
         return IO_EAGAIN_W;
+    }
+    else if(r == IO_EAGAIN_R) {
+        return IO_EAGAIN_R;
     }
     else {
         printf("ERROR: reqhandle error at handle_response_with_handler func.\n");

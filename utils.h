@@ -48,4 +48,7 @@ int handle_request(SocketNode *client_sock, ServerInfo *httpd);
 int handle_response(SocketNode *client_sock, ServerInfo *httpd);
 char *new_tmp_file(ServerInfo *httpd);
 int read_tmp_file(int client_fd, char *path, long *start);
+int handle_response_with_reqstat(SocketNode *client_sock, ServerInfo *httpd, int reqstat);
+int handle_response_with_default_handler(SocketNode *client_sock, ServerInfo *httpd);
+int handle_response_with_handler(SocketNode *client_sock, ServerInfo *httpd);
 #endif //HTTPDTMP_UTILS_H

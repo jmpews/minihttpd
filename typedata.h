@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include<regex.h>
 
 #define free_buf(buf) if(buf){free(buf);buf=NULL;}
 
@@ -52,12 +53,18 @@ typedef struct {
 /* 路由handler */
 typedef int (*RequestHandler)(struct sn *, struct si *);
 
+typedef struct {
+    int nm;
+    char *pattern;
+}RegexRoute;
+
 typedef struct routehandler{
-    char urlstring[64];
+    RegexRoute regexroute;
     int reqstat; //routehandler触发状态，在R_HEADER_START、R_HEADER_BODY、R_BODY哪个状态触发
     RequestHandler func;
     //char *(*requesthandler)(SocketNode *);
 } RouteHandler;
+
 
 
 /* socket连接节点 */
@@ -67,6 +74,7 @@ typedef struct sn {
     Req request;            //socket对应的请求
     Resp response;          //socket对应的响应
     struct routehandler *handler;
+    regmatch_t *reg;
     struct sn *next;
 } SocketNode;
 
@@ -92,7 +100,7 @@ typedef struct si{
 
 // 返回一个函数指针,该函数返回接受SocketNode * 参数,返回char *
 void init_route_handler(ServerInfo *httpd);
-RouteHandler *get_route_handler(ListNode *head_route, char *key);
-RouteHandler *get_route_handler_with_reqstat(ListNode *head_route, char *key, int reqstat);
-RouteHandler *new_route_handler(char *urlstring, RequestHandler func, int reqstat);
+RouteHandler *get_route_handler(ListNode *head_route, SocketNode *client_sock);
+RouteHandler *get_route_handler_with_reqstat(ListNode *head_route, SocketNode *client_sock, int reqstat);
+RouteHandler *new_route_handler(char *pattern, int nm, RequestHandler func, int reqstat);
 #endif //HTTPDTMP_TYPEDATA_H
