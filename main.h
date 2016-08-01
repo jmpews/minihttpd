@@ -5,6 +5,5 @@
 #ifndef HTTPDTMP_MAIN_H
 #define HTTPDTMP_MAIN_H
 
-#include <arpa/inet.h>
-
+#include "loop.h"
 #endif //HTTPDTMP_MAIN_H

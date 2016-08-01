@@ -35,47 +35,56 @@ ListNode *new_list_node(); //新建一个链表节点
 /* 请求结构体 */
 typedef struct {
     char *read_cache;       //缓存读取内容
-    long read_cache_len;     //缓存的内容长度
+    int read_cache_len;     //缓存的内容长度
     char *header_dump;      //缓存请求头
     int header_dump_len;    //请求头的长度
     char method;            //请求方法
     char *request_path;     //请求路径
     char *tmp_file_path;    //临时文件
-    long body_len;          //请求的body长度
+    int body_len;          //请求的body长度
 } Req;
 
 /* 响应结构体 */
 typedef struct {
-    long response_cache_len;    //响应内容长度
+    int response_cache_len;    //响应内容长度
     char *response_path;        //响应文件路径
 } Resp;
 
-/* 路由handler */
+/* watcher */
+typedef struct wt {
+    void *watcher_cb;
+    int events;
+    struct wt *next;
+}watcher;
+
 typedef int (*RequestHandler)(struct sn *, struct si *);
 
+/* 正则匹配 */
 typedef struct {
-    int nm;
-    char *pattern;
+    int nm;             //路由中变量个数
+    char *pattern;      //路由正则
 }RegexRoute;
 
+/* 路由handler */
 typedef struct routehandler{
     RegexRoute regexroute;
-    int reqstat; //routehandler触发状态，在R_HEADER_START、R_HEADER_BODY、R_BODY哪个状态触发
+    int reqstat;                //routehandler触发状态，在R_HEADER_START、R_HEADER_BODY、R_BODY哪个状态触发
     RequestHandler func;
-    //char *(*requesthandler)(SocketNode *);
+    /*char *(*requesthandler)(SocketNode *);*/
 } RouteHandler;
-
 
 
 /* socket连接节点 */
 typedef struct sn {
-    int client_fd;          //socket连接描述符
-    char IO_STATUS;         //socket状态
-    Req request;            //socket对应的请求
-    Resp response;          //socket对应的响应
-    struct routehandler *handler;
-    regmatch_t *reg;
+    int client_fd;                      //socket连接描述符
+    char IO_STATUS;                     //socket状态
+    Req request;                        //socket对应的请求
+    Resp response;                      //socket对应的响应
+    watcher *w;
+    struct routehandler *handler;       //路由
+    regmatch_t *reg;                    //正则结果
     struct sn *next;
+    int events;
 } SocketNode;
 
 SocketNode *new_socket_node(int client_fd); //新建一个socket节点
@@ -86,21 +95,21 @@ void add_socket_node(SocketNode *head, SocketNode *client); //添加socket节点
 
 void free_socket_node(SocketNode *head, int client_fd); //释放socket节点
 
+int watcher_add(SocketNode *client_sock, void *watcher_cb, int stat);
+int watcher_del(SocketNode *client_sock, void *watcher_cb);
 
-//********************服务器信息**********************
 
+/* 服务器信息 */
 typedef struct si{
-    char ip[20];
-    int port;
-    int fd;
-    char rootpath[256];
-    SocketNode *head_node;
-    ListNode * head_route;
+    char ip[20];                //服务器IP
+    int port;                   //服务器端口
+    int fd;                     //服务端socket_fd
+    char rootpath[256];         //服务器根目录
+    SocketNode *head_node;      //client-socket链表头结点
+    ListNode *head_route;       //路由规则头结点
 }ServerInfo;
 
-// 返回一个函数指针,该函数返回接受SocketNode * 参数,返回char *
-void init_route_handler(ServerInfo *httpd);
-RouteHandler *get_route_handler(ListNode *head_route, SocketNode *client_sock);
-RouteHandler *get_route_handler_with_reqstat(ListNode *head_route, SocketNode *client_sock, int reqstat);
-RouteHandler *new_route_handler(char *pattern, int nm, RequestHandler func, int reqstat);
+RouteHandler *get_route_handler(ListNode *head_route, SocketNode *client_sock); //根据SocketNode中的request_path返回路由处理
+RouteHandler *get_route_handler_with_reqstat(ListNode *head_route, SocketNode *client_sock, int reqstat);   //根据request_path和请求状态返回路由处理
+RouteHandler *new_route_handler(char *pattern, int nm, RequestHandler func, int reqstat); //新建路由 pattern: 路由正则, nm: 正则中变量个数, func: 路由处理函数, reqstat: 路由函数在请求哪个阶段开始处理
 #endif //HTTPDTMP_TYPEDATA_H

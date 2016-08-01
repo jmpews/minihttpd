@@ -16,15 +16,8 @@
 
 #include "typedata.h"
 
-/*
- * ===  FUNCTION  ======================================================================
- *  Name:  list_append
- *  Description:  向通用性链表追加节点, 新节点追加在head之后
- *  @param head 链表头节点
- *  @param elem 元素节点
- * =====================================================================================
- */
 
+// 链表添加节点
 void list_append(ListNode *head, ElemType *elem) {
     ListNode *node;
     node = new_list_node();
@@ -34,30 +27,12 @@ void list_append(ListNode *head, ElemType *elem) {
 }
 
 
-/*
- * ===  FUNCTION  ======================================================================
- *  Name:  list_get_by_func
- *  Description:  通过自定义函数查找节点
- * =====================================================================================
- */
-
-ElemType *list_get_by_func(ListNode *head, FindElemFunc func, void *key) {
-    ListNode *tmp = head->next;
-    if (tmp == NULL)
-        return NULL;
-    while (tmp) {
-        if (func(tmp->data, key))
-            return tmp->data;
-        tmp = tmp->next;
-    }
-    return NULL;
-}
-
+// 新建链表节点
 ListNode *new_list_node() {
     ListNode *tmp;
     tmp = (ListNode *) malloc(sizeof(ListNode));
     if (tmp == NULL) {
-        printf("ERROR : memory malloc return NULL\n");
+        printf("ERROR-[new_list_node] : memory malloc return NULL\n");
         exit(1);
     }
     tmp->data = NULL;
@@ -66,11 +41,12 @@ ListNode *new_list_node() {
 }
 
 
+// 新建socketnode节点
 SocketNode *new_socket_node(int fd) {
     SocketNode *tmp;
     tmp = (SocketNode *) malloc(sizeof(SocketNode));
     if (tmp == NULL) {
-        printf("ERROR : memory malloc return NULL\n");
+        printf("ERROR-[new_socket_node] : memory malloc return NULL\n");
         exit(1);
     }
     memset(tmp, 0, sizeof(SocketNode));
@@ -83,44 +59,34 @@ SocketNode *new_socket_node(int fd) {
 SocketNode *find_socket_node(SocketNode *head, int client_fd) {
     SocketNode *tmp = head;
     if (head == NULL) {
-        printf("ERROR: socket-node-head is NULL when find [%d-socket-node]\n", client_fd);
+        printf("ERROR-[find_socket_node]: socket-node-head is NULL when find [%d-socket-node]\n", client_fd);
         exit(1);
     }
     do {
         if (tmp->client_fd == client_fd)
             return tmp;
-    } while (tmp = tmp->next);
+        tmp = tmp->next;
+    } while (tmp);
     return NULL;
 }
 
+// 添加新节点，新节点添加在head之后
 void add_socket_node(SocketNode *head, SocketNode *client) {
     if (head == NULL) {
-        printf("ERROR: socket-node-head is NULL when add [%d-socket-node]\n", client->client_fd);
+        printf("ERROR-[add_socket_node]: socket-node-head is NULL when add [%d-socket-node]\n", client->client_fd);
         exit(1);
     }
     client->next = head->next;
     head->next = client;
 }
 
+// 释放socketnode节点
 void free_socket_node(SocketNode *head, int client_fd) {
     SocketNode *tmp = head;
     SocketNode *tmp2free = NULL;
-    //空链表
+    // 头结点是服务器listen
     if (head == NULL) {
-        printf("ERROR: socket-node-head is NULL when free [%d-socket-node]\n", client_fd);
-        exit(1);
-    }
-
-    //TODO: 这里到底是否需要判断头结点,buxu
-    if (head->client_fd == client_fd) {
-        free_buf(head->request.read_cache);
-        free_buf(head->request.header_dump);
-        free_buf(head->request.request_path);
-        free_buf(head->request.tmp_file_path);
-        free_buf(head->response.response_path);
-        free_buf(head->reg);
-        free_buf(head);
-//        close(client_fd);
+        printf("ERROR-[free_socket_node]: socket-node-head is NULL when free [%d-socket-node]\n", client_fd);
         exit(1);
     }
 
@@ -133,12 +99,12 @@ void free_socket_node(SocketNode *head, int client_fd) {
 
     //没找到node
     if ((tmp->next) == NULL) {
-        printf("ERROR: socket-node-list is empty when free [socket-%d]\n", client_fd);
+        printf("ERROR-[free_socket_node]: heade_node is empty when free [socket-%d]\n", client_fd);
         exit(1);
     }
-
     tmp2free = tmp->next;
     tmp->next = tmp->next->next;
+    
     printf("> [socket-%d] free.\n", client_fd);
     free_buf(tmp2free->request.read_cache);
     free_buf(tmp2free->request.header_dump);
@@ -147,12 +113,46 @@ void free_socket_node(SocketNode *head, int client_fd) {
     free_buf(tmp2free->response.response_path);
     free_buf(tmp2free->reg);
     free_buf(tmp2free);
-
-//    close(client_fd);
-//    TIP printf("> SOCKET[%d] ready close.\n", client_fd);
 }
 
+// watcher_add
+int watcher_add(SocketNode *client_sock, void *watcher_cb, int stat) {
+    watcher *tmp = (watcher *)malloc(sizeof(watcher));
+    memset(tmp, 0, sizeof(watcher));
+    tmp->watcher_cb = watcher_cb;
+    tmp->events |= stat;
+    if(client_sock->w != NULL) {
+        tmp->next = client_sock->w;
+        client_sock->w = tmp;
+    } else {
+        client_sock->w = tmp;
+    }
+    return 0;
+}
 
+// watcher_delete
+int watcher_del(SocketNode *client_sock, void *watcher_cb) {
+    watcher *nd;
+    watcher *tmp = client_sock->w;
+    if(tmp)
+        return 1;
+    if(tmp->watcher_cb == watcher_cb) {
+        free(tmp);
+        tmp = NULL;
+        return 0;
+    }
+    while (tmp->next) {
+        if(tmp->next->watcher_cb == watcher_cb) {
+            nd = tmp->next;
+            tmp->next = nd->next;
+            free(nd);
+            return 0;
+        }
+    }
+    return 1;
+}
+
+// 采用正则匹配路由
 int regex_route(RegexRoute rr, SocketNode *client_sock) {
     regex_t reg;
     int err;
@@ -161,11 +161,12 @@ int regex_route(RegexRoute rr, SocketNode *client_sock) {
     // 编译正则
     if(regcomp(&reg,rr.pattern,REG_EXTENDED) < 0){
         regerror(err,&reg,errbuf,sizeof(errbuf));
-        printf("ERROR:regex_route error of%s\n",errbuf);
+        printf("ERROR-[regex_route]: regex_route error of%s\n",errbuf);
+        exit(-1);
     }
+    // 匹配正则，如果有变量保存到client_sock->reg
     err = regexec(&reg, client_sock->request.request_path, rr.nm, client_sock->reg,0);
     if(err == REG_NOMATCH){
-        printf("ERROR: regex_route no match\n");
         return 0;
         
     }else if(err){
@@ -176,13 +177,14 @@ int regex_route(RegexRoute rr, SocketNode *client_sock) {
     return 1;
 }
 
+// 根据请求路径和路由正则返回handler处理函数
 RouteHandler *get_route_handler(ListNode *head_route, SocketNode *client_sock) {
     ListNode *tmp = head_route->next;
     RouteHandler *uh= (RouteHandler *)head_route->data;
     while(tmp) {
         uh = (RouteHandler *)tmp->data;
         if (regex_route(uh->regexroute, client_sock)) {
-            printf("> match route %s.\n", uh->regexroute.pattern);
+            printf("> [socket-%d] match route %s.\n", client_sock->client_fd, uh->regexroute.pattern);
             return uh;
         }
         tmp = tmp->next;
@@ -190,13 +192,14 @@ RouteHandler *get_route_handler(ListNode *head_route, SocketNode *client_sock) {
     return NULL;
 }
 
+//根据请求路径和路由正则还有reqstat(哪个阶段开始处理请求)
 RouteHandler *get_route_handler_with_reqstat(ListNode *head_route, SocketNode *client_sock, int reqstat) {
     ListNode *tmp = head_route->next;
     RouteHandler *uh;
     while(tmp) {
         uh = (RouteHandler *)tmp->data;
         if ((uh->reqstat == reqstat) && (regex_route(uh->regexroute, client_sock))) {
-            printf("> match route %s.\n", uh->regexroute.pattern);
+            printf("> [socket-%d] match route %s.\n", client_sock->client_fd, uh->regexroute.pattern);
             return uh;
         }
         tmp = tmp->next;
@@ -204,12 +207,14 @@ RouteHandler *get_route_handler_with_reqstat(ListNode *head_route, SocketNode *c
     return NULL;
 }
 
+// 设置路由正则
 void set_regex_route(char *pattern, int nm, RouteHandler *rh) {
     rh->regexroute.pattern = (char *)malloc(sizeof(char) * strlen(pattern));
     strcpy(rh->regexroute.pattern, pattern);
     rh->regexroute.nm = nm;
 }
 
+// 新建路由handler
 RouteHandler *new_route_handler(char *pattern, int nm, RequestHandler func, int reqstat) {
     RouteHandler *tmp = (RouteHandler *) malloc(sizeof(RouteHandler));
     set_regex_route(pattern, nm+1, tmp);
