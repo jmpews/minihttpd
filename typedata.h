@@ -57,6 +57,9 @@ typedef struct wt {
     struct wt *next;
 }watcher;
 
+// 前向声明
+struct sn;
+struct si;
 typedef int (*RequestHandler)(struct sn *, struct si *);
 
 /* 正则匹配 */
@@ -104,7 +107,9 @@ typedef struct si{
     char ip[20];                //服务器IP
     int port;                   //服务器端口
     int fd;                     //服务端socket_fd
-    char rootpath[256];         //服务器根目录
+    char *rootpath;             //服务器根目录
+    char *uploadpath;           //服务器上传目录
+    char *domain;               //服务器域名
     SocketNode *head_node;      //client-socket链表头结点
     ListNode *head_route;       //路由规则头结点
 }ServerInfo;
@@ -112,4 +117,6 @@ typedef struct si{
 RouteHandler *get_route_handler(ListNode *head_route, SocketNode *client_sock); //根据SocketNode中的request_path返回路由处理
 RouteHandler *get_route_handler_with_reqstat(ListNode *head_route, SocketNode *client_sock, int reqstat);   //根据request_path和请求状态返回路由处理
 RouteHandler *new_route_handler(char *pattern, int nm, RequestHandler func, int reqstat); //新建路由 pattern: 路由正则, nm: 正则中变量个数, func: 路由处理函数, reqstat: 路由函数在请求哪个阶段开始处理
+
+extern char *root_path, *upload_path;
 #endif //HTTPDTMP_TYPEDATA_H

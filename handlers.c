@@ -1,16 +1,28 @@
-#include "typedata.h"
-#include "utils.h"
-#include "main.h"
+#include "handlers.h"
 
-extern int send_file(int client_fd, char *path, long *start);
-extern void send_404(int client_fd);
-extern void send_data(int client, char *data);
+int accept_handler(ServerInfo *httpd) {
+    char ipaddr[32];
+    struct sockaddr_in client_addr;
+    socklen_t addr_len;
+    int client_fd;
+    client_fd = accept(httpd->fd, (struct sockaddr *) &client_addr, &addr_len);
+    if (client_fd < 0)
+        printf("ERROR :client connect error.\n");
+    
+    inet_ntop(AF_INET, &(client_addr.sin_addr), ipaddr, 32 * sizeof(char));
+    printf("[socket-%d] accept, detail={ip: %s}\n", client_fd, ipaddr);
+    set_nonblocking(client_fd);
+    SocketNode *tmp = new_socket_node(client_fd);
+    tmp->client_fd = client_fd;
+    add_socket_node(httpd->head_node, tmp);
+    return client_fd;
+}
 
 int default_handler(SocketNode *client_sock, ServerInfo *httpd) {
     char response_path[256];
     struct stat st;
     int r;
-    sprintf(response_path, "%s/htdocs%s", httpd->rootpath, client_sock->request.request_path);
+    sprintf(response_path, "%s/%s", httpd->rootpath, client_sock->request.request_path);
     if (response_path[strlen(response_path) - 1] == '/')
         strcat(response_path, "index.html");
     //response_path[strlen(response_path)] = '\0';
@@ -37,7 +49,7 @@ int echo_handler(SocketNode *client_sock, ServerInfo *httpd) {
 
 int upload_handler(SocketNode *client_sock, ServerInfo *httpd) {
     char *tmp_file_path;
-    char download_url[128] = "http://vultr.jmpews.com/download";
+    char download_url[128] = "";
     int r;
     
     if(client_sock->request.tmp_file_path == NULL) {
@@ -49,7 +61,8 @@ int upload_handler(SocketNode *client_sock, ServerInfo *httpd) {
         return IO_EAGAIN_R;
     }
     else if(r == IO_DONE_R) {
-        strcat(download_url, rindex(client_sock->request.tmp_file_path,'/'));
+        //strcat(download_url, rindex(client_sock->request.tmp_file_path,'/'));
+        sprintf(download_url, "%s%s", httpd->domain, rindex(client_sock->request.tmp_file_path,'/'));
         send_data(client_sock->client_fd, download_url);
         return IO_DONE_W;
     }
@@ -65,7 +78,7 @@ int download_handler(SocketNode *client_sock, ServerInfo *httpd) {
     struct stat st;
     int r;
     char *filename = &client_sock->request.request_path[client_sock->reg[1].rm_so];
-    sprintf(response_path, "%s/upload/%s", httpd->rootpath, filename);
+    sprintf(response_path, "%s/%s", httpd->uploadpath, filename);
     if (response_path[strlen(response_path) - 1] == '/')
         strcat(response_path, "index.html");
     //response_path[strlen(response_path)] = '\0';

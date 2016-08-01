@@ -8,8 +8,10 @@
 
 #ifndef loop_h
 #define loop_h
-#include "typedata.h"
 #include "loop.h"
+#include "typedata.h"
+#include "utils.h"
+#include "handlers.h"
 #include <arpa/inet.h>
 
 #define IO_READ 1
@@ -20,7 +22,6 @@ typedef struct loop {
     int *t;
 }LP;
 
-
-int accept_handler(ServerInfo *httpd);
+int register_handler(LP *loop, int fd, void *watcher_cb, int stat, ServerInfo *httpd);
 void select_loop(ServerInfo *httpd);
 #endif /* loop_h */

@@ -1,9 +1,8 @@
  //
 // Created by jmpews on 16/7/11.
 //
-
-#include "utils.h"
 #include "typedata.h"
+#include "utils.h"
 #include "loop.h"
 extern int debug_header, debug_body, debug_tips;
 
@@ -28,14 +27,16 @@ void set_nonblocking(int sockfd) {
 }
 
 // 启动服务器
-ServerInfo *startup(int *port) {
+ServerInfo *startup(int *port, char *root_path, char *upload_path, char *domain) {
     int fd = 0;
     struct sockaddr_in server_addr;
     ServerInfo *httpd;
     httpd = (ServerInfo *) malloc(sizeof(ServerInfo));
     memset(httpd, 0, sizeof(ServerInfo));
-    getcwd(httpd->rootpath, sizeof(httpd->rootpath));
-
+    //getcwd(httpd->rootpath, sizeof(httpd->rootpath));
+    httpd->rootpath = root_path;
+    httpd->uploadpath = upload_path;
+    httpd->domain = domain;
     if ((fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         printf("ERROR-[startup]: httpd start error.");
         exit(1);
@@ -164,7 +165,7 @@ int read_line_more(int client_fd, char **malloc_buffer, int *len) {
 }
 
 // 读取大量数据，读取到temp目录作为临时文件
-int read_tmp_file(int client_fd, char *path, long *start) {
+int read_tmp_file(int client_fd, char *path, int *start) {
     int r, n;
     FILE *fd;
     struct stat st;
@@ -191,7 +192,7 @@ int read_tmp_file(int client_fd, char *path, long *start) {
             }
             r = fwrite(buf, sizeof(char), n, fd);
             if(r != n) {
-                printf("ERROR-[read_tmp_file]: n!=r at send_file.\n current_cache_length=%ld, r=%d, n=%d\n", *start, r, n);
+                printf("ERROR-[read_tmp_file]: n!=r at send_file.\n current_cache_length=%d, r=%d, n=%d\n", *start, r, n);
                 exit(1);
             }
             else {
@@ -225,7 +226,7 @@ char *new_tmp_file(ServerInfo *httpd, char *optional) {
     time_t nowtime = time(NULL);
     struct tm *now = localtime(&nowtime);
     sprintf(tmp, "jmp.%d.%d.%d.%d.%d.%d.%s", now->tm_year+1900, now->tm_mon+1, now->tm_mday, now->tm_hour, now->tm_min, now->tm_sec, optional);
-    sprintf(tmp_file_path, "%s/upload/%s", httpd->rootpath, tmp);
+    sprintf(tmp_file_path, "%s/%s", httpd->uploadpath, tmp);
     fd = fopen(tmp_file_path, "w+");
     if(fd == NULL) {
         perror("ERROR-[new_tmp_file]: new file error.\n");
@@ -461,7 +462,6 @@ int handle_request(SocketNode *client_sock, ServerInfo *httpd) {
     int client_fd=client_sock->client_fd;
     switch (client_sock->IO_STATUS) {
         case R_HEADER_INIT: {
-            printf("\0");
             client_sock->IO_STATUS = R_HEADER_START;
         }
         case R_HEADER_START: {
@@ -590,7 +590,7 @@ void send_404(int client_fd) {
     send(client_fd, buf, strlen(buf), 0);
 }
 
-int send_file(int client_fd, char *path, long *start) {
+int send_file(int client_fd, char *path, int *start) {
     struct stat st;
     FILE *fd;
     int buffer_size = 1024;
@@ -621,7 +621,7 @@ int send_file(int client_fd, char *path, long *start) {
             }
             // 文件读取的字节数和发送的字节数不同
             else if(r != n) {
-                printf("ERROR: n!=r at send_file.\n current_cache_length=%ld, r=%d, n=%d", *start, r, n);
+                printf("ERROR: n!=r at send_file.\n current_cache_length=%d, r=%d, n=%d", *start, r, n);
                 exit(1);
             }
             // 文件读取的字节数和缓冲区的size不一样，需要判断发生了什么？

@@ -10,32 +10,12 @@
 #include "utils.h"
 #include <arpa/inet.h>
 
-int accept_handler(ServerInfo *httpd) {
-    char ipaddr[32];
-    struct sockaddr_in client_addr;
-    socklen_t addr_len;
-    int client_fd;
-    client_fd = accept(httpd->fd, (struct sockaddr *) &client_addr, &addr_len);
-    if (client_fd < 0)
-        printf("ERROR :client connect error.\n");
-
-    inet_ntop(AF_INET, &(client_addr.sin_addr), ipaddr, 32 * sizeof(char));
-    printf("[socket-%d] accept, detail={ip: %s}\n", client_fd, ipaddr);
-    set_nonblocking(client_fd);
-    SocketNode *tmp = new_socket_node(client_fd);
-    tmp->client_fd = client_fd;
-    add_socket_node(httpd->head_node, tmp);
-    return client_fd;
-}
-
 int register_handler(LP *loop, int fd, void *watcher_cb, int stat, ServerInfo *httpd) {
     SocketNode *client_sock = find_socket_node(httpd->head_node, fd);
     watcher_add(client_sock, watcher_cb, stat);
     client_sock->events |= stat;
     return 0;
 }
-
-
 void select_loop(ServerInfo *httpd) {
     int (*func)(SocketNode *, ServerInfo *);
     watcher *tmp;

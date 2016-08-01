@@ -1,11 +1,8 @@
 //
 // Created by jmpews on 16/7/11.
 //
+
 #include "main.h"
-#include "utils.h"
-#include "loop.h"
-#include <libgen.h>
-#include <getopt.h>
 static struct option longopts[] = {
     { "port",       required_argument,      NULL,           'p' },
     { "header",     no_argument,            NULL,           'e' },
@@ -15,16 +12,28 @@ static struct option longopts[] = {
     { NULL,         0,                      NULL,           0 }
 };
 
-int debug_header = 0, debug_body = 0, debug_tips = 0;
-void select_loop(ServerInfo *httpd);
+int debug_header = 0, debug_body = 0, debug_tips = 0, port = 8000;
+char *root_path = "/Users/jmpews/Desktop/codesnippet/c/jmp2httpd/jmp2httpd/htdocs";
+char *upload_path = "/Users/jmpews/Desktop/codesnippet/c/jmp2httpd/jmp2httpd/uploads";
+char *domain = "http://127.0.0.1:8000/download";
 
 int main(int argc, const char *argv[]) {
-
-    int opt;
-    int port = 8000;
     ServerInfo *httpd;
+    parse_command(argc, argv);
+    httpd = startup(&port, root_path, upload_path, domain);
+    if (httpd == NULL) {
+        printf("ERROR: init socket() error.\n");
+        exit(1);
+    }
+    init_route_handler(httpd);
+    printf("> start listening %d.\n", port);
 
-    while((opt = getopt_long_only(argc, argv, "p:ebdh", longopts, NULL)) != -1) {
+    select_loop(httpd);
+}
+
+void parse_command(int argc, const char *argv[]) {
+    int opt;
+    while((opt = getopt_long_only(argc, (char *const *)argv, "p:ebdh", longopts, NULL)) != -1) {
         switch (opt) {
             case 'p':
                 port = atoi(optarg);
@@ -40,18 +49,8 @@ int main(int argc, const char *argv[]) {
                 break;
             default:
                 printf("usage:\n  --port 'listen port'\n  --header 'debug show header'\n  --body 'debug show body'\n  --tips 'debug show tips'\n");
-				exit(1);
+                exit(1);
         }
     }
-    httpd = startup(&port);
-    if (httpd == NULL) {
-        printf("ERROR: init socket() error.\n");
-        exit(1);
-    }
-    init_route_handler(httpd);
-    printf("> start listening %d.\n", port);
-
-    select_loop(httpd);
 }
-
 
