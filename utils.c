@@ -1,31 +1,33 @@
-//
+ //
 // Created by jmpews on 16/7/11.
 //
 
 #include "utils.h"
 #include "typedata.h"
-
+#include "loop.h"
 extern int debug_header, debug_body, debug_tips;
 
 //*****************************************  服务器初始化模块  ************************************
 
+// 设置非阻塞
 void set_nonblocking(int sockfd) {
     int opts;
     opts = fcntl(sockfd, F_GETFL);
     if (opts < 0) {
-        printf("ERROR: fcntl F_GETFL\n");
+        printf("ERROR-[set_noblocking]: fcntl F_GETFL\n");
         exit(1);
     }
 
     opts = opts | O_NONBLOCK;
     if (fcntl(sockfd, F_SETFL, opts) < 0) {
-        printf("ERROR: fcntl F_SETFL\n");
+        printf("ERROR-[set_noblocking: fcntl F_SETFL\n");
         exit(1);
     }
     if(debug_tips)
         printf("> socket-[%d] non-blocking.\n", sockfd);
 }
 
+// 启动服务器
 ServerInfo *startup(int *port) {
     int fd = 0;
     struct sockaddr_in server_addr;
@@ -35,13 +37,13 @@ ServerInfo *startup(int *port) {
     getcwd(httpd->rootpath, sizeof(httpd->rootpath));
 
     if ((fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        printf("ERROR: httpd start error.");
+        printf("ERROR-[startup]: httpd start error.");
         exit(1);
     }
 
     int opt = SO_REUSEADDR;
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1) {
-        printf("ERRPR: socket start error of reuse error.");
+        printf("ERRPR-[startup]: socket start error of reuse error.");
         exit(1);
     }
 
@@ -57,12 +59,12 @@ ServerInfo *startup(int *port) {
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
     if (bind(fd, (struct sockaddr *) &server_addr, sizeof(struct sockaddr_in)) == -1) {
-        printf("ERRPR: http start error of bind error.\n");
+        printf("ERRPR-[startup]: http start error of bind error.\n");
         exit(1);
     }
 
     if (listen(fd, 1024) == -1) {
-        printf("ERRPR: http start error of listen error.\n");
+        printf("ERRPR-[startup]: http start error of listen error.\n");
         exit(1);
     }
 
@@ -71,12 +73,7 @@ ServerInfo *startup(int *port) {
 
 //*****************************************  Request模块  ************************************
 
-/*
- * 读到buf,返回状态码
- * 1. 读取状态码(失败、成功、EAGAIN)
- * 2. 读取内容长度
- * 3. 一行数据有没有读取完毕
-*/
+// 读取一行数据有size限制
 int read_line(int sock, char *buffer, int size, int *len) {
     char c = '\0';
     int r = 0, t = 0;
@@ -105,12 +102,12 @@ int read_line(int sock, char *buffer, int size, int *len) {
     *len = t;
 
     if (r < 0) {
-        // 缓冲区为空,读取失败
+        // 需要等待下次读取响应
         if (errno == EAGAIN) {
             return IO_EAGAIN_R;
         }
         else {
-            printf("ERROR: error at read_line");
+            printf("ERROR-[read_line]: error at read_line");
             return IO_ERROR;
         }
     }
@@ -120,11 +117,8 @@ int read_line(int sock, char *buffer, int size, int *len) {
 		return IO_LINE_NOT_DONE;
 }
 
-//读取一行无论数据有多长
-/*
- * @malloc_buffer 读取内容
- *
- */
+// 读取一行数据无论有多长
+// @malloc_buffer 读取内容存放
 int read_line_more(int client_fd, char **malloc_buffer, int *len) {
     int r;
     int n = 0;
@@ -138,18 +132,6 @@ int read_line_more(int client_fd, char **malloc_buffer, int *len) {
 
     r = read_line(client_fd, buf, buffer_size, &t);
 
-    /*
-     * 读取流程:
-     * 读取一行(buf_size=1024)
-     * 拷贝到buf
-     * >进行状态判断
-     * 1. 最后字符!='\n',且读取状态为IO_LINE_DONE
-     *      重新读取
-     * 2. 读取错误IO_EAGAIN || IO_ERROR
-     *      返回buf+状态码
-     * 3. 最后字符为'\n'
-     *      读取完毕，返回返回buf+状态码
-     */
     while (1 && t > 1) {
         if (!temp_buffer)
             temp_buffer = (char *) malloc(sizeof(char) * t);
@@ -174,14 +156,14 @@ int read_line_more(int client_fd, char **malloc_buffer, int *len) {
             return r;
         }
 		else {
-			printf("ERROR: unknown error at read_line_more\n");
+			printf("ERROR-[read_line_more]: unknown error at read_line_more\n");
 			exit(1);
 		}
     }
     return r;
 }
 
-// 读取到temp目录作为临时文件
+// 读取大量数据，读取到temp目录作为临时文件
 int read_tmp_file(int client_fd, char *path, long *start) {
     int r, n;
     FILE *fd;
@@ -191,7 +173,8 @@ int read_tmp_file(int client_fd, char *path, long *start) {
     if ((stat(path, &st) != -1) && ((st.st_mode & S_IFMT) == S_IFREG)) {
         fd = fopen(path, "w+");
         if(!fd) {
-            printf("ERROR: %s open failed.\n", path);
+            printf("ERROR-[read_tmp_file]: %s open failed.\n", path);
+            exit(1);
         }
         while(1) {
             memset(buf, 0, sizeof(buf));
@@ -202,19 +185,20 @@ int read_tmp_file(int client_fd, char *path, long *start) {
                     fclose(fd);
                     return IO_EAGAIN_R;
                 } else {
-                    printf("ERROR: unknown at read_block.\n");
+                    printf("ERROR-[read_tmp_file]: unknown at read_block.\n");
                     exit(1);
                 }
             }
             r = fwrite(buf, sizeof(char), n, fd);
             if(r != n) {
-                printf("ERROR: n!=r at send_file.\n current_cache_length=%ld, r=%d, n=%d\n", *start, r, n);
+                printf("ERROR-[read_tmp_file]: n!=r at send_file.\n current_cache_length=%ld, r=%d, n=%d\n", *start, r, n);
                 exit(1);
             }
             else {
                 if(n != buffer_size) {
                      if (ferror(fd)) {
-                        printf("ERROR: %s reading error.\n", path);
+                        printf("ERROR-[read_tmp_file]: %s reading error.\n", path);
+                         exit(1);
                     }
                     else if (n < buffer_size) {
                         fclose(fd);
@@ -225,26 +209,26 @@ int read_tmp_file(int client_fd, char *path, long *start) {
             *start += n;
         }
     } else {
-        printf("ERROR: unknown at read_block\n");
+        printf("ERROR-[read_tmp_file]: file is not exist\n");
         exit(1);
     }
 }
 
-char *new_tmp_file(ServerInfo *httpd) {
+// 新建一个空的临时文件
+char *new_tmp_file(ServerInfo *httpd, char *optional) {
     char *tmp_file_path;
-    char tmp[128];
+    char tmp[256];
     FILE *fd;
     tmp_file_path = (char *)malloc(sizeof(char) * 256);
     memset(tmp_file_path, 0, 256);
 
     time_t nowtime = time(NULL);
     struct tm *now = localtime(&nowtime);
-    //sprintf(tmp, "jmp.%d.%d.%d.%d.%d.%d", now->tm_year+1900, now->tm_mon+1, now->tm_mday, now->tm_hour, now->tm_min, now->tm_sec);
-    sprintf(tmp, "test");
+    sprintf(tmp, "jmp.%d.%d.%d.%d.%d.%d.%s", now->tm_year+1900, now->tm_mon+1, now->tm_mday, now->tm_hour, now->tm_min, now->tm_sec, optional);
     sprintf(tmp_file_path, "%s/upload/%s", httpd->rootpath, tmp);
     fd = fopen(tmp_file_path, "w+");
     if(fd == NULL) {
-        printf("ERROR: new file error.\n");
+        perror("ERROR-[new_tmp_file]: new file error.\n");
         exit(1);
     }
     fclose(fd);
@@ -264,6 +248,8 @@ int handle_error(int client_fd) {
     free_buf(malloc_buf);
     return IO_ERROR;
 }
+
+// 处理EAGAIN时的缓冲
 void handle_eagain_cache(SocketNode *client_sock, int r, char *malloc_buf, int len)  {
     // 如果read_line_more 读取数据，遇到EAGAIN，需要保存cache，需要加上之前的cache
     // 如果read_line_more 读取数据，遇到IO_LINE_DONE，表明读取完毕，查看之前是否有cache，需要加上之前的cache
@@ -281,6 +267,7 @@ void handle_eagain_cache(SocketNode *client_sock, int r, char *malloc_buf, int l
     }
 }
 
+// 保存请求头，清除'行cache'
 void save_header_dump(SocketNode *client_sock) {
     client_sock->request.header_dump = (char *) realloc(client_sock->request.header_dump,client_sock->request.read_cache_len + client_sock->request.header_dump_len - 1);
     memcpy(client_sock->request.header_dump + client_sock->request.header_dump_len, client_sock->request.read_cache, client_sock->request.read_cache_len - 1);
@@ -288,6 +275,7 @@ void save_header_dump(SocketNode *client_sock) {
     free_buf(client_sock->request.read_cache);
     client_sock->request.read_cache_len = 0;
 }
+
 //处理请求的第一行,获取请求方法,请求路径
 int request_header_start(int client_fd, SocketNode *client_sock) {
     int buffer_size = 1024;
@@ -329,7 +317,6 @@ int request_header_start(int client_fd, SocketNode *client_sock) {
             len = 0;
             printf("ERROR: request_header_start error of \n%s", malloc_buf);
             return handle_error(client_fd);
-            exit(1);
         }
         if (!strcasecmp(tmp_buf, "GET"))
             client_sock->request.method = M_GET;
@@ -362,6 +349,7 @@ int request_header_start(int client_fd, SocketNode *client_sock) {
     return IO_ERROR;
 }
 
+// 处理handler中的键值对
 void handle_header_kv(int client_fd, char *buf, int len, SocketNode *client_sock) {
     char key[64];
     int i;
@@ -378,9 +366,7 @@ void handle_header_kv(int client_fd, char *buf, int len, SocketNode *client_sock
     }
 }
 
-/*
- *  请求header的处理流程:
- */
+// 请求header的处理流程
 int request_header_body(int client_fd, SocketNode *client_sock) {
     int r, len;
     short end;
@@ -391,7 +377,7 @@ int request_header_body(int client_fd, SocketNode *client_sock) {
         malloc_buf = NULL;
         r = read_line_more(client_fd, &malloc_buf, &len);
         if (r == IO_ERROR) {
-            printf("ERROR: request_header_body...\n");
+            printf("ERROR-[request_header_body]: request_header_body...\n");
             exit(1);
         }
         // read_cache内有上次缓存数据
@@ -422,13 +408,11 @@ int request_header_body(int client_fd, SocketNode *client_sock) {
     return IO_DONE_R;
 }
 
-
+// 处理请求题
 int request_body(int client_fd, SocketNode *client_sock) {
-    int buffer_size = 1024;
     int r;
     char *malloc_buf = NULL;
     int len = 0;
-    char *buffer;
     if(debug_body)
         printf("[socket-%d] request-body:\n", client_fd);
     //PRINT_LINE_TITLE("header-end");
@@ -441,7 +425,7 @@ int request_body(int client_fd, SocketNode *client_sock) {
         free_buf(malloc_buf);
         r = read_line_more(client_fd, &malloc_buf, &len);
         if (r == IO_ERROR) {
-            printf("ERROR: request_header_body...\n");
+            printf("ERROR-[request-body]: request_header_body...\n");
             exit(1);
         }
         // read_cache内有上次缓存数据
@@ -471,7 +455,7 @@ int request_body(int client_fd, SocketNode *client_sock) {
     return IO_DONE_R;
 }
 
-// 根据状态机的思路
+// 根据状态机的思路,处理请求流程
 int handle_request(SocketNode *client_sock, ServerInfo *httpd) {
     int r;
     int client_fd=client_sock->client_fd;
@@ -484,9 +468,12 @@ int handle_request(SocketNode *client_sock, ServerInfo *httpd) {
             // 在header_start就开始使用handler
             r = handle_response_with_reqstat(client_sock, httpd, R_HEADER_START);
             if(r != NO_HANDLER) {
+                watcher_del(client_sock, (void *)handle_request);
                 return r;
             }
-            r = request_header_start(client_fd, client_sock);
+            else {
+                r = request_header_start(client_fd, client_sock);
+            }
             if (r == IO_EAGAIN_R) {
                 if (client_sock->request.method == M_ERROR)
                     return IO_ERROR;
@@ -498,7 +485,7 @@ int handle_request(SocketNode *client_sock, ServerInfo *httpd) {
 
             }
             else {
-                printf("ERROR: unknown error at R_HEADER_START.\n");
+                printf("ERROR-[handle_request]: unknown error at R_HEADER_START.\n");
                 exit(1);
             }
         }
@@ -506,6 +493,7 @@ int handle_request(SocketNode *client_sock, ServerInfo *httpd) {
             // 在handler_key_value的时候
             r = handle_response_with_reqstat(client_sock, httpd, R_HEADER_BODY);
             if(r != NO_HANDLER) {
+                watcher_del(client_sock, (void *)handle_request);
                 return r;
             }
             r = request_header_body(client_fd, client_sock);
@@ -527,6 +515,7 @@ int handle_request(SocketNode *client_sock, ServerInfo *httpd) {
         case R_BODY: {
             r = handle_response_with_reqstat(client_sock, httpd, R_BODY);
             if(r != NO_HANDLER) {
+                watcher_del(client_sock, (void *)handle_request);
                 return r;
             }
             r = request_body(client_fd, client_sock);
@@ -542,8 +531,10 @@ int handle_request(SocketNode *client_sock, ServerInfo *httpd) {
                 exit(1);
             }
             r = handle_response_with_reqstat(client_sock, httpd, R_RESPONSE);
-            if(r != NO_HANDLER) {
-                r = handle_response_with_default_handler(client_sock, httpd);
+            if(r == NO_HANDLER) {
+                exit(1);
+                //watcher_del(client_sock, (void *)handle_request);
+                //r = handle_response_with_default_handler(client_sock, httpd);
             }
             return r;
         }
@@ -663,7 +654,7 @@ int handle_response_with_reqstat(SocketNode *client_sock, ServerInfo *httpd, int
     rthandler = get_route_handler_with_reqstat(httpd->head_route, client_sock, reqstat);
     if(rthandler == NULL) {
         return NO_HANDLER;
-        rthandler = (RouteHandler *)httpd->head_route->data;
+        //rthandler = (RouteHandler *)httpd->head_route->data;
     }
     
     client_sock->handler = rthandler;
@@ -673,6 +664,7 @@ int handle_response_with_reqstat(SocketNode *client_sock, ServerInfo *httpd, int
     if(r == IO_DONE_W)
         return IO_DONE_W;
     else if(r == IO_EAGAIN_W) {
+        register_handler(NULL, client_sock->client_fd, (void *)rthandler, IO_WRITE, httpd);
         return IO_EAGAIN_W;
     }
     else if(r == IO_EAGAIN_R) {
@@ -695,6 +687,7 @@ int handle_response_with_handler(SocketNode *client_sock, ServerInfo *httpd) {
     if(r == IO_DONE_W)
         return IO_DONE_W;
     else if(r == IO_EAGAIN_W) {
+        register_handler(NULL, client_sock->client_fd, (void *)rthandler, IO_WRITE, httpd);
         return IO_EAGAIN_W;
     }
     else if(r == IO_EAGAIN_R) {
@@ -719,6 +712,7 @@ int handle_response_with_default_handler(SocketNode *client_sock, ServerInfo *ht
     if(r == IO_DONE_W)
         return IO_DONE_W;
     else if(r == IO_EAGAIN_W) {
+        register_handler(NULL, client_sock->client_fd, (void *)rthandler, IO_WRITE, httpd);
         return IO_EAGAIN_W;
     }
     else if(r == IO_EAGAIN_R) {

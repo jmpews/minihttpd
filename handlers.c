@@ -39,14 +39,17 @@ int upload_handler(SocketNode *client_sock, ServerInfo *httpd) {
     char *tmp_file_path;
     char download_url[128] = "http://vultr.jmpews.com/download";
     int r;
-    tmp_file_path = new_tmp_file(httpd);
-    client_sock->request.tmp_file_path = tmp_file_path;
-    r = read_tmp_file(client_sock->client_fd, tmp_file_path, &client_sock->request.read_cache_len);
+    
+    if(client_sock->request.tmp_file_path == NULL) {
+        tmp_file_path = new_tmp_file(httpd, rindex(client_sock->request.request_path, '/')+1);
+        client_sock->request.tmp_file_path = tmp_file_path;
+    }
+    r = read_tmp_file(client_sock->client_fd, client_sock->request.tmp_file_path, &client_sock->request.read_cache_len);
     if(r == IO_EAGAIN_R) {
         return IO_EAGAIN_R;
     }
     else if(r == IO_DONE_R) {
-        strcat(download_url, rindex(tmp_file_path,'/'));
+        strcat(download_url, rindex(client_sock->request.tmp_file_path,'/'));
         send_data(client_sock->client_fd, download_url);
         return IO_DONE_W;
     }
@@ -82,12 +85,10 @@ int download_handler(SocketNode *client_sock, ServerInfo *httpd) {
 
 void init_route_handler(ServerInfo *httpd) {
     ListNode *head_route = new_list_node();
-    head_route->data = (void *)new_route_handler("*", 0, (RequestHandler)default_handler, 0);
-    head_route->next = NULL;
     httpd->head_route = head_route;
+    list_append(httpd->head_route, (void *)new_route_handler(".*", 0, (RequestHandler)default_handler, R_RESPONSE));
     list_append(httpd->head_route, (void *)new_route_handler("/echo", 0, (RequestHandler)echo_handler, R_RESPONSE));
-    list_append(httpd->head_route, (void *)new_route_handler("/upload", 0, (RequestHandler)upload_handler, R_BODY));
+    list_append(httpd->head_route, (void *)new_route_handler("/upload/.*", 0, (RequestHandler)upload_handler, R_BODY));
     list_append(httpd->head_route, (void *)new_route_handler("/download/(.*)", 1, (RequestHandler)download_handler, R_RESPONSE));
 
 }
-

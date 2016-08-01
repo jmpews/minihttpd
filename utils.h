@@ -16,37 +16,33 @@
 
 #define IO_ERROR -1
 
-
-
-#define IO_LINE_DONE 1
-#define IO_LINE_NOT_DONE 2
-#define IO_DONE_R 3 //request read IO_DONE
-#define IO_DONE_W 4 //response write IO_DONE
-#define NO_HANDLER 5 //没有找到HANDLER
-#define IO_EAGAIN_R EAGAIN //request read IO_EAGAIN
-#define IO_EAGAIN_W (EAGAIN+1) //request read IO_EAGAIN
-
+#define IO_LINE_DONE 1              // read a line done
+#define IO_LINE_NOT_DONE 2          // not done
+#define IO_DONE_R 3                 //request read IO_DONE
+#define IO_DONE_W 4                 //response write IO_DONE
+#define NO_HANDLER 5                //not found match HANDLER
+#define IO_EAGAIN_R EAGAIN          //request read IO_EAGAIN
+#define IO_EAGAIN_W (EAGAIN+1)      //response write IO_EAGAIN
 
 #define M_GET 1
 #define M_POST 2
 #define M_ERROR -1
 
-#define R_HEADER_INIT 0
+#define R_HEADER_INIT 0             //request state
 #define R_HEADER_START 1
 #define R_HEADER_BODY 2
 #define R_BODY 3
 #define R_RESPONSE 4
 #define RESPONSE 5
 
-
-
 #define is_space(x) isspace((int)(x))
+
 void set_nonblocking(int sockfd);
 ServerInfo *startup(int *port);
 
 int handle_request(SocketNode *client_sock, ServerInfo *httpd);
 int handle_response(SocketNode *client_sock, ServerInfo *httpd);
-char *new_tmp_file(ServerInfo *httpd);
+char *new_tmp_file(ServerInfo *httpd, char *optional);
 int read_tmp_file(int client_fd, char *path, long *start);
 int handle_response_with_reqstat(SocketNode *client_sock, ServerInfo *httpd, int reqstat);
 int handle_response_with_default_handler(SocketNode *client_sock, ServerInfo *httpd);
