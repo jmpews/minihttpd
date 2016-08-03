@@ -29,12 +29,14 @@ int default_handler(SocketNode *client_sock, ServerInfo *httpd) {
     if ((stat(response_path, &st) != -1) && ((st.st_mode & S_IFMT) == S_IFREG)) {
          r = send_file(client_sock->client_fd, response_path, &client_sock->response.response_cache_len);
          if(r == IO_DONE_W) {
+             watcher_del(client_sock, (void *)default_handler);
              return IO_DONE_W;
          } else if(r == IO_EAGAIN_W) {
              return IO_EAGAIN_W;
          }
     } else {
         send_404(client_sock->client_fd);
+        watcher_del(client_sock, (void *)default_handler);
         return IO_DONE_W;
     }
     return IO_DONE_W;
@@ -44,6 +46,7 @@ int default_handler(SocketNode *client_sock, ServerInfo *httpd) {
 
 int echo_handler(SocketNode *client_sock, ServerInfo *httpd) {
     send_data(client_sock->client_fd, client_sock->request.header_dump);
+    watcher_del(client_sock, (void *)echo_handler);
     return IO_DONE_W;
 }
 
@@ -56,7 +59,7 @@ int upload_handler(SocketNode *client_sock, ServerInfo *httpd) {
         tmp_file_path = new_tmp_file(httpd, rindex(client_sock->request.request_path, '/')+1);
         client_sock->request.tmp_file_path = tmp_file_path;
     }
-    r = read_tmp_file(client_sock->client_fd, client_sock->request.tmp_file_path, &client_sock->request.read_cache_len);
+    r = read_tmp_file(client_sock->client_fd, client_sock->request.tmp_file_path, &client_sock->request.read_cache_len, client_sock->request.body_len);
     if(r == IO_EAGAIN_R) {
         return IO_EAGAIN_R;
     }
@@ -64,6 +67,7 @@ int upload_handler(SocketNode *client_sock, ServerInfo *httpd) {
         //strcat(download_url, rindex(client_sock->request.tmp_file_path,'/'));
         sprintf(download_url, "%s%s", httpd->domain, rindex(client_sock->request.tmp_file_path,'/'));
         send_data(client_sock->client_fd, download_url);
+        watcher_del(client_sock, (void *)upload_handler);
         return IO_DONE_W;
     }
     else {
@@ -85,12 +89,14 @@ int download_handler(SocketNode *client_sock, ServerInfo *httpd) {
     if ((stat(response_path, &st) != -1) && ((st.st_mode & S_IFMT) == S_IFREG)) {
         r = send_file(client_sock->client_fd, response_path, &client_sock->response.response_cache_len);
         if(r == IO_DONE_W) {
+            watcher_del(client_sock, (void *)download_handler);
             return IO_DONE_W;
         } else if(r == IO_EAGAIN_W) {
             return IO_EAGAIN_W;
         }
     } else {
         send_404(client_sock->client_fd);
+        watcher_del(client_sock, (void *)download_handler);
         return IO_DONE_W;
     }
     return IO_DONE_W;

@@ -134,11 +134,9 @@ int watcher_add(SocketNode *client_sock, void *watcher_cb, int stat) {
 int watcher_del(SocketNode *client_sock, void *watcher_cb) {
     watcher *nd;
     watcher *tmp = client_sock->w;
-    if(tmp)
-        return 1;
     if(tmp->watcher_cb == watcher_cb) {
         free(tmp);
-        tmp = NULL;
+        client_sock->w = NULL;
         return 0;
     }
     while (tmp->next) {

@@ -42,7 +42,7 @@ ServerInfo *startup(int *port, char *root_path, char *upload_path, char *domin);
 int handle_request(SocketNode *client_sock, ServerInfo *httpd);
 int handle_response(SocketNode *client_sock, ServerInfo *httpd);
 char *new_tmp_file(ServerInfo *httpd, char *optional);
-int read_tmp_file(int client_fd, char *path, int *start);
+int read_tmp_file(int client_fd, char *path, int *start, int bodylen);
 int send_file(int client_fd, char *path, int *start);
 void send_404(int client_fd);
 void send_data(int client, char *data);

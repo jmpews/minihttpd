@@ -165,7 +165,7 @@ int read_line_more(int client_fd, char **malloc_buffer, int *len) {
 }
 
 // 读取大量数据，读取到temp目录作为临时文件
-int read_tmp_file(int client_fd, char *path, int *start) {
+int read_tmp_file(int client_fd, char *path, int *start, int bodylen) {
     int r, n;
     FILE *fd;
     struct stat st;
@@ -177,7 +177,7 @@ int read_tmp_file(int client_fd, char *path, int *start) {
             printf("ERROR-[read_tmp_file]: %s open failed.\n", path);
             exit(1);
         }
-        while(1) {
+        while(*start < bodylen) {
             memset(buf, 0, sizeof(buf));
             n = recv(client_fd, buf, buffer_size, 0);
             if (n == -1) {
@@ -190,24 +190,23 @@ int read_tmp_file(int client_fd, char *path, int *start) {
                     exit(1);
                 }
             }
+            
             r = fwrite(buf, sizeof(char), n, fd);
+            
             if(r != n) {
                 printf("ERROR-[read_tmp_file]: n!=r at send_file.\n current_cache_length=%d, r=%d, n=%d\n", *start, r, n);
                 exit(1);
             }
-            else {
-                if(n != buffer_size) {
-                     if (ferror(fd)) {
-                        printf("ERROR-[read_tmp_file]: %s reading error.\n", path);
-                         exit(1);
-                    }
-                    else if (n < buffer_size) {
-                        fclose(fd);
-                        return IO_DONE_R;
-                    }
-                }
-            }
+            
             *start += n;
+        }
+        if(*start == bodylen) {
+            fclose(fd);
+            return IO_DONE_R;
+        }
+        else {
+            printf("ERROR-[read_tmp_file] *start != bodylen\n");
+            exit(1);
         }
     } else {
         printf("ERROR-[read_tmp_file]: file is not exist\n");
@@ -531,6 +530,7 @@ int handle_request(SocketNode *client_sock, ServerInfo *httpd) {
                 exit(1);
             }
             r = handle_response_with_reqstat(client_sock, httpd, R_RESPONSE);
+            watcher_del(client_sock, (void *)handle_request);
             if(r == NO_HANDLER) {
                 exit(1);
                 //watcher_del(client_sock, (void *)handle_request);
@@ -664,10 +664,11 @@ int handle_response_with_reqstat(SocketNode *client_sock, ServerInfo *httpd, int
     if(r == IO_DONE_W)
         return IO_DONE_W;
     else if(r == IO_EAGAIN_W) {
-        register_handler(NULL, client_sock->client_fd, (void *)rthandler, IO_WRITE, httpd);
+        register_handler(NULL, client_sock->client_fd, (void *)rthandler->func, IO_WRITE, httpd);
         return IO_EAGAIN_W;
     }
     else if(r == IO_EAGAIN_R) {
+        register_handler(NULL, client_sock->client_fd, (void *)rthandler->func, IO_READ, httpd);
         return IO_EAGAIN_R;
     }
     else {
@@ -687,10 +688,11 @@ int handle_response_with_handler(SocketNode *client_sock, ServerInfo *httpd) {
     if(r == IO_DONE_W)
         return IO_DONE_W;
     else if(r == IO_EAGAIN_W) {
-        register_handler(NULL, client_sock->client_fd, (void *)rthandler, IO_WRITE, httpd);
+        register_handler(NULL, client_sock->client_fd, (void *)rthandler->func, IO_WRITE, httpd);
         return IO_EAGAIN_W;
     }
     else if(r == IO_EAGAIN_R) {
+        register_handler(NULL, client_sock->client_fd, (void *)rthandler->func, IO_READ, httpd);
         return IO_EAGAIN_R;
     }
     else {
@@ -712,10 +714,11 @@ int handle_response_with_default_handler(SocketNode *client_sock, ServerInfo *ht
     if(r == IO_DONE_W)
         return IO_DONE_W;
     else if(r == IO_EAGAIN_W) {
-        register_handler(NULL, client_sock->client_fd, (void *)rthandler, IO_WRITE, httpd);
+        register_handler(NULL, client_sock->client_fd, (void *)rthandler->func, IO_WRITE, httpd);
         return IO_EAGAIN_W;
     }
     else if(r == IO_EAGAIN_R) {
+        register_handler(NULL, client_sock->client_fd, (void *)rthandler->func, IO_READ, httpd);
         return IO_EAGAIN_R;
     }
     else {

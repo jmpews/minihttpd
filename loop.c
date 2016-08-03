@@ -89,32 +89,33 @@ void select_loop(ServerInfo *httpd) {
                                 if(tmp->events&IO_READ) {
                                     func = tmp->watcher_cb;
                                     r = func(client_sock, httpd);
-                                }
+                                
                             
-//                            if(client_sock->handler != NULL)
-//                                r = handle_response_with_handler(client_sock, httpd);
-//                            else
-//                                r = handle_request(client_sock, httpd);
-                                if (r == IO_DONE_R) {
-                                    FD_CLR(i, &read_fds);
-                                    FD_SET(i, &write_fds);
-                                }
-                                else if (r == IO_DONE_W) {
-                                    shutdown(i, SHUT_WR); //不用清除状态 因为下次关闭时读取0字节
-                                }
-                                else if (r == IO_ERROR) {
-                                    printf("> [socket-%d] error closed.\n", i);
-                                    FD_CLR(i, &read_fds);
-                                    free_socket_node(httpd->head_node, i);
-                                    client_array[i] = 0;
-                                }
-                                else if (r == IO_EAGAIN_R) {
-                                    printf("WARNNING: read EAGAIN code.\n");
-                                }
-                                else if (r == IO_EAGAIN_W) {
-                                    FD_CLR(i, &read_fds);
-                                    FD_SET(i, &write_fds); //重新加入select中
-                                    printf("WARNNING: write EAGAIN code.\n");
+                                    //if(client_sock->handler != NULL)
+                                    //    r = handle_response_with_handler(client_sock, httpd);
+                                    //else
+                                    //    r = handle_request(client_sock, httpd);
+                                    if (r == IO_DONE_R) {
+                                        FD_CLR(i, &read_fds);
+                                        FD_SET(i, &write_fds);
+                                    }
+                                    else if (r == IO_DONE_W) {
+                                        shutdown(i, SHUT_WR); //不用清除状态 因为下次关闭时读取0字节
+                                    }
+                                    else if (r == IO_ERROR) {
+                                        printf("> [socket-%d] error closed.\n", i);
+                                        FD_CLR(i, &read_fds);
+                                        free_socket_node(httpd->head_node, i);
+                                        client_array[i] = 0;
+                                    }
+                                    else if (r == IO_EAGAIN_R) {
+                                        printf("WARNNING: read EAGAIN code.\n");
+                                    }
+                                    else if (r == IO_EAGAIN_W) {
+                                        FD_CLR(i, &read_fds);
+                                        FD_SET(i, &write_fds); //重新加入select中
+                                        printf("WARNNING: write EAGAIN code.\n");
+                                    }
                                 }
                                 tmp = tmp->next;
                             }
@@ -125,7 +126,7 @@ void select_loop(ServerInfo *httpd) {
 //                            r = handle_response_with_handler(client_sock, httpd);
                             tmp = client_sock->w;
                             while(tmp) {
-                                if(tmp->events&IO_READ) {
+                                if(tmp->events&IO_WRITE) {
                                     func = tmp->watcher_cb;
                                     r = func(client_sock, httpd);
                                 }
