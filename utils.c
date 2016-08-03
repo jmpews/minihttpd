@@ -165,14 +165,16 @@ int read_line_more(int client_fd, char **malloc_buffer, int *len) {
 }
 
 // 读取大量数据，读取到temp目录作为临时文件
-int read_tmp_file(int client_fd, char *path, int *start, int bodylen) {
+int read_tmp_file(int client_fd, char *path, long *start, long bodylen) {
     int r, n;
     FILE *fd;
     struct stat st;
     int buffer_size = 1024*2;
     char buf[buffer_size];
     if ((stat(path, &st) != -1) && ((st.st_mode & S_IFMT) == S_IFREG)) {
-        fd = fopen(path, "w+");
+        fd = fopen(path, "a+");
+        //fseek(fd,0,SEEK_END);
+        //printf("%ld",ftell(fd));
         if(!fd) {
             printf("ERROR-[read_tmp_file]: %s open failed.\n", path);
             exit(1);
@@ -194,7 +196,7 @@ int read_tmp_file(int client_fd, char *path, int *start, int bodylen) {
             r = fwrite(buf, sizeof(char), n, fd);
             
             if(r != n) {
-                printf("ERROR-[read_tmp_file]: n!=r at send_file.\n current_cache_length=%d, r=%d, n=%d\n", *start, r, n);
+                printf("ERROR-[read_tmp_file]: n!=r at send_file.\n current_cache_length=%ld, r=%d, n=%d\n", *start, r, n);
                 exit(1);
             }
             
@@ -590,10 +592,11 @@ void send_404(int client_fd) {
     send(client_fd, buf, strlen(buf), 0);
 }
 
-int send_file(int client_fd, char *path, int *start) {
+int send_file(int client_fd, char *path, long *start) {
     struct stat st;
     FILE *fd;
     int buffer_size = 1024;
+    long lenfile;
     int n, r;
     char buf[buffer_size];
     if ((stat(path, &st) != -1) && ((st.st_mode & S_IFMT) == S_IFREG)) {
@@ -602,9 +605,10 @@ int send_file(int client_fd, char *path, int *start) {
             printf("ERROR: %s open failed.\n", path);
             exit(1);
         }
+        fseek(fd, 0L, SEEK_END);
+        lenfile = ftell(fd);
         fseek(fd, *start, SEEK_SET);
-
-        while(1) {
+        while(*start < lenfile) {
             memset(buf, 0, buffer_size);
             n = fread(buf, sizeof(char), buffer_size, fd);
             r = send(client_fd, buf, n, 0);
@@ -621,24 +625,20 @@ int send_file(int client_fd, char *path, int *start) {
             }
             // 文件读取的字节数和发送的字节数不同
             else if(r != n) {
-                printf("ERROR: n!=r at send_file.\n current_cache_length=%d, r=%d, n=%d", *start, r, n);
+                printf("ERROR: n!=r at send_file.\n current_cache_length=%ld, r=%d, n=%d", *start, r, n);
                 exit(1);
             }
-            // 文件读取的字节数和缓冲区的size不一样，需要判断发生了什么？
-            else {
-                if(n != buffer_size) {
-                     if (ferror(fd)) {
-                        printf("ERROR: %s reading error.", path);
-                    }
-                    else if (feof(fd)) {
-                        fclose(fd);
-                        return IO_DONE_W;
-                    }
-                }
-
-            }
             *start += n;
-       }
+        }
+        if(*start == lenfile) {
+            fclose(fd);
+            return IO_DONE_W;
+        }
+        else {
+            printf("ERROR-[send-file]: *start!=lenfile");
+            exit(1);
+        }
+        
     } else {
         printf("ERROR: not found\n");
         exit(1);
