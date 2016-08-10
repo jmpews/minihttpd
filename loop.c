@@ -19,13 +19,12 @@ int register_handler(LP *loop, int fd, void *watcher_cb, int stat, ServerInfo *h
 void select_loop(ServerInfo *httpd) {
     int (*func)(SocketNode *, ServerInfo *);
     watcher *tmp;
-    struct sockaddr_in client_addr;
     struct timeval tv;
     socklen_t addr_len;
     addr_len = sizeof(struct sockaddr_in);
     
     char c;
-    int i, j, r, MAX_CLIENTS;
+    int i, r, MAX_CLIENTS;
     MAX_CLIENTS = 1024;
     
     int client_fd;

@@ -286,7 +286,7 @@ int request_header_start(int client_fd, SocketNode *client_sock) {
     char *malloc_buf = NULL;
 
     if(debug_header)
-        printf("socket-%d] request-header: \n", client_fd);
+        printf("[socket-%d] request-header: \n", client_fd);
     r = read_line_more(client_fd, &malloc_buf, &len);
     if (r == IO_ERROR) {
         printf("ERROR: request_header_start...\n");
@@ -315,7 +315,6 @@ int request_header_start(int client_fd, SocketNode *client_sock) {
         }
         tmp_buf[i] = '\0';
         if (strcasecmp(tmp_buf, "GET") && strcasecmp(tmp_buf, "POST") && strcasecmp(tmp_buf, "PUT")) {
-            free_buf(malloc_buf);
             len = 0;
             printf("ERROR: request_header_start error of \n%s", malloc_buf);
             return handle_error(client_fd);
