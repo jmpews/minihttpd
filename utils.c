@@ -67,12 +67,14 @@ ServerInfo *startup(int *port, char *root_path, char *upload_path, char *domain)
     }
     printf("\t-SO_RCVBUF: %d\n", tmp);
     
+    // 最小触发
     if (getsockopt(fd, SOL_SOCKET, SO_SNDLOWAT, &tmp, &tmp_len) == -1) {
         printf("ERROR-[startup]: getsockopt error.");
         exit(1);
     }
     printf("\t-SO_SNDLOWAT: %d\n", tmp);
     
+    // 最小触发
     if (getsockopt(fd, SOL_SOCKET, SO_RCVLOWAT, &tmp, &tmp_len) == -1) {
         printf("ERROR-[startup]: getsockopt error.");
         exit(1);
