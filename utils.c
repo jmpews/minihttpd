@@ -30,6 +30,8 @@ void set_nonblocking(int sockfd) {
 ServerInfo *startup(int *port, char *root_path, char *upload_path, char *domain) {
     int fd = 0;
     struct sockaddr_in server_addr;
+    int tmp = 0;
+    socklen_t tmp_len;
     ServerInfo *httpd;
     httpd = (ServerInfo *) malloc(sizeof(ServerInfo));
     memset(httpd, 0, sizeof(ServerInfo));
@@ -41,7 +43,7 @@ ServerInfo *startup(int *port, char *root_path, char *upload_path, char *domain)
         printf("ERROR-[startup]: httpd start error.");
         exit(1);
     }
-
+    
     int opt = SO_REUSEADDR;
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1) {
         printf("ERRPR-[startup]: socket start error of reuse error.");
@@ -50,6 +52,32 @@ ServerInfo *startup(int *port, char *root_path, char *upload_path, char *domain)
 
     //设置非阻塞
     set_nonblocking(fd);
+    
+    //打印基本网络信息
+    printf("+Socket Setting Info:\n");
+    if (getsockopt(fd, SOL_SOCKET, SO_SNDBUF, &tmp, &tmp_len) == -1) {
+        printf("ERROR-[startup]: getsockopt error.");
+        exit(1);
+    }
+    printf("\t-SO_SNDBUF: %d\n", tmp);
+    
+    if (getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &tmp, &tmp_len) == -1) {
+        printf("ERROR-[startup]: getsockopt error.");
+        exit(1);
+    }
+    printf("\t-SO_RCVBUF: %d\n", tmp);
+    
+    if (getsockopt(fd, SOL_SOCKET, SO_SNDLOWAT, &tmp, &tmp_len) == -1) {
+        printf("ERROR-[startup]: getsockopt error.");
+        exit(1);
+    }
+    printf("\t-SO_SNDLOWAT: %d\n", tmp);
+    
+    if (getsockopt(fd, SOL_SOCKET, SO_RCVLOWAT, &tmp, &tmp_len) == -1) {
+        printf("ERROR-[startup]: getsockopt error.");
+        exit(1);
+    }
+    printf("\t-SO_RCVLOWAT: %d\n", tmp);
 
     //新建头结点
     httpd->head_node = new_socket_node(fd);
