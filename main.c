@@ -13,8 +13,8 @@ static struct option longopts[] = {
 };
 
 int debug_header = 0, debug_body = 0, debug_tips = 0, port = 8000;
-char *root_path = "/Users/jmpews/Desktop/codesnippet/c/jmp2httpd/jmp2httpd/htdocs";
-char *upload_path = "/Users/jmpews/Desktop/codesnippet/c/jmp2httpd/jmp2httpd/uploads";
+char *root_path = "./htdocs";
+char *upload_path = "./uploads";
 char *domain = "http://127.0.0.1:8000/download";
 
 int main(int argc, const char *argv[]) {
